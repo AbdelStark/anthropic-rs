@@ -33,3 +33,13 @@ impl From<ConfigError> for AnthropicError {
         Self::InvalidArgument(e.to_string())
     }
 }
+
+/// Wrapper to deserialize the error object nested in "error" JSON key
+#[derive(Debug, Deserialize)]
+pub(crate) struct WrappedError {
+    pub(crate) error: ApiError,
+}
+
+pub(crate) fn map_deserialization_error(e: serde_json::Error, _bytes: &[u8]) -> AnthropicError {
+    AnthropicError::JSONDeserialize(e)
+}

@@ -2,6 +2,7 @@ use std::error::Error;
 
 use anthropic::client::Client;
 use anthropic::config::AnthropicConfig;
+use anthropic::types::CompleteRequestBuilder;
 use dotenv::dotenv;
 
 #[tokio::main]
@@ -16,8 +17,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cfg = AnthropicConfig::new()?;
     let client = Client::try_from(cfg)?;
 
+    let complete_request = CompleteRequestBuilder::default().prompt("Once upon a time").build()?;
     // Send a completion request.
-    client.complete().await?;
+    let complete_response = client.complete(complete_request).await?;
+
+    println!("completion response: {complete_response:?}");
 
     Ok(())
 }

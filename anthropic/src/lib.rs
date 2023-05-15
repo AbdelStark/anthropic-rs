@@ -8,9 +8,14 @@
 #[macro_use]
 extern crate derive_builder;
 
-// Path: src/client.rs
 pub mod client;
-// Path: src/config.rs
 pub mod config;
-// Path: src/error.rs
 pub mod error;
+pub mod types;
+
+/// Default model to use.
+pub const DEFAULT_MODEL: &str = "claude-v1";
+/// Default v1 API base url.
+pub const DEFAULT_API_BASE: &str = "https://api.anthropic.com";
+/// Auth header key.
+pub const AUTHORIZATION_HEADER_KEY: &str = "x-api-key";
