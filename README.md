@@ -56,29 +56,25 @@ You can also set these variables manually when you crate a new `Client` instance
 
 ```rust
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn Error>> {
     // Initialize the logger.
     env_logger::init();
 
-    // Initialize the error handler.
-    color_eyre::install()?;
-
     // Load the environment variables from the .env file.
     dotenv().ok();
-
-    // You can use automatic configuration from environment variables or build the client manually.
-    // Build manually.
-    let client = ClientBuilder::default().api_key("...".to_owned()).default_model("claude-v1".to_owned()).build()?;
 
     // Build from configuration.
     let cfg = AnthropicConfig::new()?;
     let client = Client::try_from(cfg)?;
 
-    // TODO: use the client and interact with the API.
+    // Send a completion request.
+    client.complete().await?;
 
     Ok(())
 }
 ```
+
+You can find full working examples in the [examples](examples) directory.
 
 ## Contributing
 
