@@ -1,0 +1,30 @@
+[package]
+name = "anthropic"
+version = "0.0.1"
+authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]
+edition = "2021"
+license = "MIT"
+homepage = "https://github.com/abdelhamidbakhta/anthropic-rs"
+repository = "https://github.com/abdelhamidbakhta/antrhopic-rs"
+description = "Anthropic Rust SDK."
+readme = "README.md"
+
+[dependencies]
+color-eyre = "0.6.2"
+config = "0.13.3"
+dotenv = "0.15.0"
+env_logger = "0.10.0"
+lazy_static = "1.4.0"
+log = "0.4.17"
+serde = "1.0.163"
+serde_derive = "1.0.163"
+serde_json = "1.0.96"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies.cargo-husky]
+version = "1"
+default-features = false # Disable features which are enabled by default
+features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy"]
+
+[profile.dev.package.backtrace]
+opt-level = 3
