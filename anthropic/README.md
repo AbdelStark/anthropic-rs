@@ -3,6 +3,8 @@
 [![GitHub Workflow Status](https://github.com/abdelhamidbakhta/anthropic-rs/actions/workflows/test.yml/badge.svg)](https://github.com/abdelhamidbakhta/anthropic-rs/actions/workflows/test.yml)
 [![Project license](https://img.shields.io/github/license/abdelhamidbakhta/anthropic-rs.svg?style=flat-square)](LICENSE)
 [![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/abdelhamidbakhta/anthropic-rs/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+[![Rust docs](https://docs.rs/anthropic/badge.svg)](https://docs.rs/anthropic)
+[![Rust crate](https://img.shields.io/crates/v/anthropic.svg)](https://crates.io/crates/anthropic)
 
 `anthropic-rs` is an unofficial Rust library to interact with Anthropic REST API, with async support.
 
@@ -65,4 +67,4 @@ anthropic-rs is licensed under the [MIT License](LICENSE).
 ## Acknowledgements
 
 - [Anthropic API reference](https://console.anthropic.com/docs/api/reference) for the clear and concise documentation.
-- The architecture of the SDK is inspired by [async-openai](https://github.com/64bit/async-openai), an asynchronous Rust library developed for OpenAI. We extend our heartfelt gratitude to the creators for their invaluable work. We envisage significant benefits in developing a standardized interface for interaction with various AI GPT providers' APIs. As an example, it would facilitate the development of versatile wrappers that could seamlessly interface with different providers.
+- The architecture of the SDK is inspired by [anthropic](https://github.com/64bit/anthropic), an asynchronous Rust library developed for OpenAI. We extend our heartfelt gratitude to the creators for their invaluable work. We envisage significant benefits in developing a standardized interface for interaction with various AI GPT providers' APIs. As an example, it would facilitate the development of versatile wrappers that could seamlessly interface with different providers.
