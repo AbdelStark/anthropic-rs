@@ -1,18 +1,19 @@
 //! General configuration
-use color_eyre::Result;
 use config::Config;
 use serde_derive::Deserialize;
+
+use crate::error::AnthropicError;
 
 /// Configuration for the application.
 #[derive(Debug, Default, Deserialize)]
 pub struct AnthropicConfig {
     pub api_key: String,
-    pub model: Option<String>,
+    pub default_model: Option<String>,
 }
 
 impl AnthropicConfig {
     /// Create a new configuration from environment variables.
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, AnthropicError> {
         CONFIG.clone().try_deserialize().map_err(|e| e.into())
     }
 }
