@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = Client::try_from(cfg)?;
 
     // Send a completion request.
-    let _completion_result = client.complete().await?;
+    client.complete().await?;
 
     Ok(())
 }
