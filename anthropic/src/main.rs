@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cfg = AnthropicConfig::new()?;
     let client = Client::try_from(cfg)?;
 
-    let complete_request = CompleteRequestBuilder::default().prompt("Once upon a time").build()?;
+    let complete_request = CompleteRequestBuilder::default().prompt("How many toes do dogs have?").build()?;
     // Send a completion request.
     let complete_response = client.complete(complete_request).await?;
 

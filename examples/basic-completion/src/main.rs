@@ -1,9 +1,8 @@
-#[macro_use]
-extern crate log;
 use std::error::Error;
 
-use anthropic::client::{Client, ClientBuilder};
+use anthropic::client::Client;
 use anthropic::config::AnthropicConfig;
+use anthropic::types::CompleteRequestBuilder;
 use dotenv::dotenv;
 
 #[tokio::main]
@@ -14,15 +13,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Load the environment variables from the .env file.
     dotenv().ok();
 
-    // You can use automatic configuration from environment variables or build the client manually.
-    // Build manually.
-    let client = ClientBuilder::default().api_key("...".to_owned()).default_model("claude-v1".to_owned()).build()?;
-
     // Build from configuration.
     let cfg = AnthropicConfig::new()?;
     let client = Client::try_from(cfg)?;
 
-    // TODO: use the client and interact with the API.
+    let complete_request = CompleteRequestBuilder::default().prompt("How many toes do dogs have?").build()?;
+    // Send a completion request.
+    let complete_response = client.complete(complete_request).await?;
+
+    println!("completion response: {complete_response:?}");
 
     Ok(())
 }

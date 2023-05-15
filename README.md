@@ -20,9 +20,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cfg = AnthropicConfig::new()?;
     let client = Client::try_from(cfg)?;
 
+    let complete_request = CompleteRequestBuilder::default().prompt("How many toes do dogs have?").build()?;
     // Send a completion request.
-    client.complete().await?;
+    let complete_response = client.complete(complete_request).await?;
 
+    println!("completion response: {complete_response:?}");
     Ok(())
 }
 ```
