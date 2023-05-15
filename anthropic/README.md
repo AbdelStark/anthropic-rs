@@ -46,7 +46,7 @@ You can also set these variables manually when you crate a new `Client` instance
 
 ## Features
 
-- [ ] Completion (`/v1/complete`)
+- [x] Completion (`/v1/complete`)
 
 ## Contributing
 
