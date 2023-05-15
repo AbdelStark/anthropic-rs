@@ -67,4 +67,4 @@ anthropic-rs is licensed under the [MIT License](LICENSE).
 ## Acknowledgements
 
 - [Anthropic API reference](https://console.anthropic.com/docs/api/reference) for the clear and concise documentation.
-- The architecture of the SDK is inspired by [anthropic](https://github.com/64bit/anthropic), an asynchronous Rust library developed for OpenAI. We extend our heartfelt gratitude to the creators for their invaluable work. We envisage significant benefits in developing a standardized interface for interaction with various AI GPT providers' APIs. As an example, it would facilitate the development of versatile wrappers that could seamlessly interface with different providers.
+- The architecture of the SDK is inspired by [async-openai](https://github.com/64bit/async-openai), an asynchronous Rust library developed for OpenAI. We extend our heartfelt gratitude to the creators for their invaluable work. We envisage significant benefits in developing a standardized interface for interaction with various AI GPT providers' APIs. As an example, it would facilitate the development of versatile wrappers that could seamlessly interface with different providers.
