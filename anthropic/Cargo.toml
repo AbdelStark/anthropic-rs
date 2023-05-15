@@ -7,7 +7,7 @@ license = "MIT"
 homepage = "https://github.com/abdelhamidbakhta/anthropic-rs"
 repository = "https://github.com/abdelhamidbakhta/antrhopic-rs"
 categories = ["api-bindings", "web-programming", "asynchronous"]
-keywords = ["anthropic", "async", "openapi", "ai", "gpt", "claude"]
+keywords = ["anthropic", "async", "ai", "gpt", "claude"]
 description = "Anthropic Rust SDK."
 readme = "README.md"
 
