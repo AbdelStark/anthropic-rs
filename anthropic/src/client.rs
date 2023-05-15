@@ -22,7 +22,8 @@ pub struct Client {
     /// Don't allow the user to set this through the builder.
     #[builder(setter(skip))]
     pub http_client: reqwest::Client,
-    /// The exponential backoff strategy.
+    /// The exponential backoff strategy, defaulted to `Default::default()`.
+    #[builder(default = "Default::default()")]
     pub backoff: backoff::ExponentialBackoff,
 }
 
