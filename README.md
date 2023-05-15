@@ -1,12 +1,12 @@
-# anthropic-rs
-
-Anthropic unofficial Rust SDK  🦀.
+# Anthropic unofficial Rust SDK  🦀
 
 [![GitHub Workflow Status](https://github.com/abdelhamidbakhta/anthropic-rs/actions/workflows/test.yml/badge.svg)](https://github.com/abdelhamidbakhta/anthropic-rs/actions/workflows/test.yml)
 [![Project license](https://img.shields.io/github/license/abdelhamidbakhta/anthropic-rs.svg?style=flat-square)](LICENSE)
 [![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/abdelhamidbakhta/anthropic-rs/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
 
-`anthropic-rs` is an unofficial Rust library to interact with Anthropic REST API.
+`anthropic-rs` is an unofficial Rust library to interact with Anthropic REST API, with async support.
+
+Wanna play with [Claude](https://www.anthropic.com/product) in Rust? This is the place to be!
 
 ## Usage
 
