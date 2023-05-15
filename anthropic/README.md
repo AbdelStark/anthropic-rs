@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
-You can find full working examples in the [examples](examples) directory.
+You can find full working examples in the [examples](../examples) directory.
 
 ## Configuration
 
