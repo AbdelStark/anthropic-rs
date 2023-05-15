@@ -57,9 +57,6 @@ You can also set these variables manually when you crate a new `Client` instance
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Initialize the logger.
-    env_logger::init();
-
     // Load the environment variables from the .env file.
     dotenv().ok();
 
