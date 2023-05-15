@@ -20,6 +20,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let complete_request = CompleteRequestBuilder::default()
         .prompt(format!("{HUMAN_PROMPT}How many toes do dogs have?{AI_PROMPT}"))
+        .model("claude-v1".to_string())
         .stream_response(false)
         .stop_sequences(vec![HUMAN_PROMPT.to_string()])
         .build()?;
