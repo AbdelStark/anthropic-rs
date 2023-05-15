@@ -1,11 +1,11 @@
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, ACCEPT, CONTENT_TYPE};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::config::AnthropicConfig;
 use crate::error::{map_deserialization_error, AnthropicError, WrappedError};
 use crate::types::{CompleteRequest, CompleteResponse};
-use crate::{AUTHORIZATION_HEADER_KEY, DEFAULT_API_BASE, DEFAULT_MODEL};
+use crate::{AUTHORIZATION_HEADER_KEY, CLIENT_ID, CLIENT_ID_HEADER_KEY, DEFAULT_API_BASE, DEFAULT_MODEL};
 
 /// The client to interact with the API.
 #[derive(Builder, Debug)]
@@ -49,13 +49,24 @@ impl Client {
         self.api_base.as_str()
     }
 
+    /// Generate the headers for the request.
     pub fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION_HEADER_KEY, self.api_key().parse().unwrap());
+        headers.insert(CLIENT_ID_HEADER_KEY, CLIENT_ID.as_str().parse().unwrap());
+        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        headers.insert(ACCEPT, "application/json".parse().unwrap());
         headers
     }
 
-    /// Make a POST request to {path} and deserialize the response body
+    /// Make a POST request to {path} and deserialize the response body.
+    /// # Arguments
+    /// * `path` - The path to POST to.
+    /// * `request` - The request body.
+    /// # Returns
+    /// The response body.
+    /// # Errors
+    /// * `AnthropicError` - If the request fails.
     pub(crate) async fn post<I, O>(&self, path: &str, request: I) -> Result<O, AnthropicError>
     where
         I: Serialize,
@@ -72,7 +83,13 @@ impl Client {
         self.execute(request).await
     }
 
-    /// Deserialize response body from either error object or actual response object
+    /// Deserialize response body from either error object or actual response object.
+    /// # Arguments
+    /// * `response` - The response to process.
+    /// # Returns
+    /// The response body.
+    /// # Errors
+    /// * `AnthropicError` - If the request fails.
     async fn process_response<O>(&self, response: reqwest::Response) -> Result<O, AnthropicError>
     where
         O: DeserializeOwned,
@@ -94,6 +111,12 @@ impl Client {
 
     /// Execute any HTTP requests and retry on rate limit, except streaming ones as they cannot be
     /// cloned for retrying.
+    /// # Arguments
+    /// * `request` - The request to execute.
+    /// # Returns
+    /// The response body.
+    /// # Errors
+    /// * `AnthropicError` - If the request fails.
     async fn execute<O>(&self, request: reqwest::Request) -> Result<O, AnthropicError>
     where
         O: DeserializeOwned,
