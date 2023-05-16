@@ -56,6 +56,7 @@ You can also set these variables manually when you crate a new `Client` instance
 ## Features
 
 - [x] Completion (`/v1/complete`)
+- [ ] Manage stream mode
 
 ## Contributing
 
