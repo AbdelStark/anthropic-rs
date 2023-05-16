@@ -5,7 +5,7 @@
 //! ## Usage
 //! ```rust
 //! use std::error::Error;
-//! use anthropic::client::Client;
+//! use anthropic::client::ClientBuilder;
 //! use anthropic::config::AnthropicConfig;
 //! use anthropic::types::CompleteRequestBuilder;
 //! use anthropic::{AI_PROMPT, HUMAN_PROMPT};
@@ -16,9 +16,8 @@
 //! // Load the environment variables from the .env file.
 //! dotenv().ok();
 //!
-//! // Build from configuration.
-//! let cfg = AnthropicConfig::new()?;
-//! let client = Client::try_from(cfg)?;
+//! // Build with manual configuration.
+//! let client = ClientBuilder::default().api_key("my-api-key".to_string()).build()?;
 //!
 //! let complete_request = CompleteRequestBuilder::default()
 //!     .prompt(format!("{HUMAN_PROMPT}How many toes do dogs have?{AI_PROMPT}"))
