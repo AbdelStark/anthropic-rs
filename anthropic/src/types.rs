@@ -32,6 +32,7 @@ pub struct CompleteResponse {
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StopReason {
     MaxTokens,
     StopSequence,
