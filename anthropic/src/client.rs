@@ -1,11 +1,18 @@
+use std::pin::Pin;
+
 use reqwest::header::{HeaderMap, ACCEPT, CONTENT_TYPE};
+use reqwest_eventsource::{Event, EventSource, RequestBuilderExt};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tokio_stream::{Stream, StreamExt};
 
 use crate::config::AnthropicConfig;
 use crate::error::{map_deserialization_error, AnthropicError, WrappedError};
-use crate::types::{CompleteRequest, CompleteResponse};
-use crate::{AUTHORIZATION_HEADER_KEY, CLIENT_ID, CLIENT_ID_HEADER_KEY, DEFAULT_API_BASE, DEFAULT_MODEL};
+use crate::types::{CompleteRequest, CompleteResponse, CompleteResponseStream};
+use crate::{
+    API_VERSION, API_VERSION_HEADER_KEY, AUTHORIZATION_HEADER_KEY, CLIENT_ID, CLIENT_ID_HEADER_KEY, DEFAULT_API_BASE,
+    DEFAULT_MODEL,
+};
 
 /// The client to interact with the API.
 #[derive(Builder, Debug)]
@@ -36,7 +43,17 @@ impl Client {
     /// # Errors
     /// * `AnthropicError` - If the request fails.
     pub async fn complete(&self, request: CompleteRequest) -> Result<CompleteResponse, AnthropicError> {
+        if request.stream {
+            return Err(AnthropicError::InvalidArgument("When stream is true, use complete_stream() instead".into()));
+        }
         self.post("/v1/complete", request).await
+    }
+
+    pub async fn complete_stream(&self, request: CompleteRequest) -> Result<CompleteResponseStream, AnthropicError> {
+        if !request.stream {
+            return Err(AnthropicError::InvalidArgument("When stream is false, use complete() instead".into()));
+        }
+        Ok(self.post_stream("/v1/complete", request).await)
     }
 
     /// Get the API key.
@@ -56,6 +73,7 @@ impl Client {
         headers.insert(CLIENT_ID_HEADER_KEY, CLIENT_ID.as_str().parse().unwrap());
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         headers.insert(ACCEPT, "application/json".parse().unwrap());
+        headers.insert(API_VERSION_HEADER_KEY, API_VERSION.parse().unwrap());
         headers
     }
 
@@ -81,6 +99,35 @@ impl Client {
             .build()?;
 
         self.execute(request).await
+    }
+
+    /// Make a streaming POST request to {path} and create a Stream of the retuned Server-Sent Events
+    /// # Arguments
+    /// * `path` - The path to POST to.
+    /// * `request` - The request body.
+    /// # Returns
+    /// A Stream of Server-Sent Events
+    /// # Errors
+    /// * `AnthropicError` - If the request fails.
+    pub(crate) async fn post_stream<I, O>(
+        &self,
+        path: &str,
+        request: I,
+    ) -> Pin<Box<dyn Stream<Item = Result<O, AnthropicError>> + Send>>
+    where
+        I: Serialize,
+        O: DeserializeOwned + Send + 'static,
+    {
+        let event_source = self
+            .http_client
+            .post(format!("{}{path}", self.api_base()))
+            .bearer_auth(self.api_key())
+            .headers(self.headers())
+            .json(&request)
+            .eventsource()
+            .unwrap();
+
+        stream(event_source).await
     }
 
     /// Deserialize response body from either error object or actual response object.
@@ -171,6 +218,50 @@ impl Client {
             }
         }
     }
+}
+
+async fn stream<O>(mut event_source: EventSource) -> Pin<Box<dyn Stream<Item = Result<O, AnthropicError>> + Send>>
+where
+    O: DeserializeOwned + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+    tokio::spawn(async move {
+        while let Some(ev) = event_source.next().await {
+            match ev {
+                Ok(event) => match event {
+                    Event::Open => continue,
+                    Event::Message(message) => {
+                        match message.event.as_ref() {
+                            "ping" => continue,
+                            "completion" => {
+                                let response = match serde_json::from_str::<O>(&message.data) {
+                                    Ok(output) => Ok(output),
+                                    Err(e) => Err(map_deserialization_error(e, message.data.as_bytes())),
+                                };
+
+                                if let Err(_e) = tx.send(response) {
+                                    // rx dropped
+                                    break;
+                                }
+                            }
+                            _ => continue,
+                        }
+                    }
+                },
+                Err(e) => {
+                    if let Err(_e) = tx.send(Err(AnthropicError::StreamError(e.to_string()))) {
+                        // rx dropped
+                        break;
+                    }
+                }
+            }
+        }
+
+        event_source.close();
+    });
+
+    Box::pin(tokio_stream::wrappers::UnboundedReceiverStream::new(rx))
 }
 
 impl TryFrom<AnthropicConfig> for Client {
