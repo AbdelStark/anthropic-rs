@@ -21,8 +21,8 @@
 //!
 //! let complete_request = CompleteRequestBuilder::default()
 //!     .prompt(format!("{HUMAN_PROMPT}How many toes do dogs have?{AI_PROMPT}"))
-//!     .model("claude-v1".to_string())
-//!     .stream_response(false)
+//!     .model("claude-instant-1".to_string())
+//!     .stream(false)
 //!     .stop_sequences(vec![HUMAN_PROMPT.to_string()])
 //!     .build()?;
 //!
@@ -59,9 +59,15 @@ pub const DEFAULT_MODEL: &str = "claude-v1";
 /// Default v1 API base url.
 pub const DEFAULT_API_BASE: &str = "https://api.anthropic.com";
 /// Auth header key.
-pub const AUTHORIZATION_HEADER_KEY: &str = "x-api-key";
+const AUTHORIZATION_HEADER_KEY: &str = "x-api-key";
 /// Client id header key.
-pub const CLIENT_ID_HEADER_KEY: &str = "Client";
+const CLIENT_ID_HEADER_KEY: &str = "Client";
+/// API version header key.
+/// Ref: https://docs.anthropic.com/claude/reference/versioning
+const API_VERSION_HEADER_KEY: &str = "anthropic-version";
+
+/// Ref: https://docs.anthropic.com/claude/reference/versioning
+const API_VERSION: &str = "2023-06-01";
 
 /// Get the client id.
 pub fn client_id() -> String {

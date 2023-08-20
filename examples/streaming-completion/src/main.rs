@@ -1,10 +1,12 @@
 use std::error::Error;
+use std::io::Write;
 
 use anthropic::client::Client;
 use anthropic::config::AnthropicConfig;
-use anthropic::types::CompleteRequestBuilder;
+use anthropic::types::{CompleteRequestBuilder, StopReason};
 use anthropic::{AI_PROMPT, HUMAN_PROMPT};
 use dotenv::dotenv;
+use tokio_stream::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,16 +22,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let complete_request = CompleteRequestBuilder::default()
         .prompt(format!("{HUMAN_PROMPT}How many toes do dogs have?{AI_PROMPT}"))
-        .model("claude-instant-1".to_string())
+        .model("claude-2".to_string())
         .max_tokens_to_sample(256usize)
-        .stream(false)
+        .stream(true)
         .stop_sequences(vec![HUMAN_PROMPT.to_string()])
         .build()?;
 
     // Send a completion request.
-    let complete_response = client.complete(complete_request).await?;
+    let mut stream = client.complete_stream(complete_request).await?;
 
-    println!("completion response: {complete_response:?}");
+    while let Some(resp) = stream.next().await {
+        match resp {
+            Ok(response) => {
+                if let Some(StopReason::StopSequence) = response.stop_reason {
+                    break;
+                }
+
+                print!("{}", response.completion);
+                std::io::stdout().flush().unwrap();
+            },
+            Err(e) => {
+                println!("\n{e}\n")
+            },
+        }
+    }
 
     Ok(())
 }

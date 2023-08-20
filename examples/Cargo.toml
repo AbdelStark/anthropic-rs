@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "basic-completion",
+    "streaming-completion",
 ]
 resolver = "2"

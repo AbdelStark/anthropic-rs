@@ -19,3 +19,4 @@ cargo run
 ## List of examples
 
 - [basic-completion](basic-completion): A basic example of completion.
+- [streaming-completion](streaming-completion): An example of streaming the completion response.

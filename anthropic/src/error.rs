@@ -13,6 +13,9 @@ pub enum AnthropicError {
     /// Error when a response cannot be deserialized into a Rust type
     #[error("failed to deserialize api response: {0}")]
     JSONDeserialize(serde_json::Error),
+    /// Error on SSE streaming
+    #[error("stream failed: {0}")]
+    StreamError(String),
     /// Error from client side validation
     /// or when builder fails to build request before making API call
     #[error("invalid args: {0}")]

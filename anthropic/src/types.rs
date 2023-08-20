@@ -1,6 +1,9 @@
 //! Module for types used in the API.
+use std::pin::Pin;
+
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
+use tokio_stream::Stream;
 
 use crate::error::AnthropicError;
 use crate::DEFAULT_MODEL;
@@ -22,14 +25,17 @@ pub struct CompleteRequest {
     pub stop_sequences: Option<Vec<String>>,
     /// Whether to incrementally stream the response.
     #[builder(default = "false")]
-    pub stream_response: bool,
+    pub stream: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Serialize)]
 pub struct CompleteResponse {
     pub completion: String,
-    pub stop_reason: StopReason,
+    pub stop_reason: Option<StopReason>,
 }
+
+/// Parsed server side events stream until a [StopReason::StopSequence] is received from server.
+pub type CompleteResponseStream = Pin<Box<dyn Stream<Item = Result<CompleteResponse, AnthropicError>> + Send>>;
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
