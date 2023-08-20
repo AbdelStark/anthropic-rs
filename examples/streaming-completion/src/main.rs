@@ -40,10 +40,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 print!("{}", response.completion);
                 std::io::stdout().flush().unwrap();
-            },
+            }
             Err(e) => {
                 println!("\n{e}\n")
-            },
+            }
         }
     }
 
