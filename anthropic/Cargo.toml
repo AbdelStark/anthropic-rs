@@ -19,24 +19,26 @@ rustls = ["reqwest/rustls-tls-native-roots"]
 native-tls = ["reqwest/native-tls"]
 
 [dependencies]
-backoff = {version = "0.4.0", features = ["tokio"] }
-config = "0.13.3"
-dotenv = "0.15.0"
-derive_builder = "0.12.0"
-env_logger = "0.10.0"
+backoff = { version = "0.4.0", features = ["tokio"], default-features = false }
+config = { features = ["ron"], default-features = false, version = "0.13.3" }
+derive_builder = { default-features = false, version = "0.12.0" }
 lazy_static = "1.4.0"
 log = "0.4.17"
-reqwest = { version = "0.11.17", features = ["json", "stream", "multipart"],default-features = false }
-serde = "1.0.163"
+reqwest = { version = "0.11.17", features = ["json"], default-features = false }
+serde = { default-features = false, version = "1.0.163" }
 serde_derive = "1.0.163"
-serde_json = "1.0.96"
-tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1.14"
+serde_json = { default-features = false, version = "1.0.96" }
+tokio = { version = "1", default-features = false }
+tokio-stream = { default-features = false, version = "0.1.14" }
 thiserror = "1.0.40"
 rustc_version = "0.4.0"
 reqwest-eventsource = "0.4.0"
 
-[dev-dependencies.cargo-husky]
-version = "1"
-default-features = false # Disable features which are enabled by default
-features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy"]
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
+dotenv = "0.15.0"
+cargo-husky = { version = "1", default-features = false, features = [
+    "precommit-hook",
+    "run-cargo-test",
+    "run-cargo-clippy",
+] }
