@@ -72,7 +72,10 @@ const API_VERSION: &str = "2023-06-01";
 /// Get the client id.
 pub fn client_id() -> String {
     // Get the Rust version used to build SDK at compile time.
-    let rust_version = version().unwrap();
+    let rust_version = match version() {
+        Ok(v) => v.to_string(),
+        Err(_) => "unknown".to_string(),
+    };
     let crate_name = env!("CARGO_PKG_NAME");
     let crate_version = env!("CARGO_PKG_VERSION");
     format!("rustv{rust_version}/{crate_name}/{crate_version}")
