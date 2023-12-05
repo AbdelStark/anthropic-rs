@@ -101,8 +101,8 @@ impl Client {
         self.execute(request).await
     }
 
-    /// Make a streaming POST request to {path} and create a Stream of the retuned Server-Sent Events
-    /// # Arguments
+    /// Make a streaming POST request to {path} and create a Stream of the retuned Server-Sent
+    /// Events # Arguments
     /// * `path` - The path to POST to.
     /// * `request` - The request body.
     /// # Returns
