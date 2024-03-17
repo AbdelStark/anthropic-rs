@@ -2,6 +2,8 @@
 use config::ConfigError;
 use serde::Deserialize;
 
+use crate::types::StreamError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AnthropicError {
     /// Underlying error from reqwest library after an API call was made
@@ -15,7 +17,7 @@ pub enum AnthropicError {
     JSONDeserialize(serde_json::Error),
     /// Error on SSE streaming
     #[error("stream failed: {0}")]
-    StreamError(String),
+    StreamError(StreamError),
     /// Error from client side validation
     /// or when builder fails to build request before making API call
     #[error("invalid args: {0}")]

@@ -8,7 +8,10 @@ use tokio_stream::{Stream, StreamExt};
 
 use crate::config::AnthropicConfig;
 use crate::error::{map_deserialization_error, AnthropicError, WrappedError};
-use crate::types::{CompleteRequest, CompleteResponse, CompleteResponseStream};
+use crate::types::{
+    CompleteRequest, CompleteResponse, CompleteResponseStream, MessagesRequest, MessagesResponse,
+    MessagesResponseStream, StreamError,
+};
 use crate::{
     API_VERSION, API_VERSION_HEADER_KEY, AUTHORIZATION_HEADER_KEY, CLIENT_ID, CLIENT_ID_HEADER_KEY, DEFAULT_API_BASE,
     DEFAULT_MODEL,
@@ -53,7 +56,34 @@ impl Client {
         if !request.stream {
             return Err(AnthropicError::InvalidArgument("When stream is false, use complete() instead".into()));
         }
-        Ok(self.post_stream("/v1/complete", request).await)
+        Ok(self.post_stream("/v1/complete", request, ["completion"]).await)
+    }
+
+    pub async fn messages(&self, request: MessagesRequest) -> Result<MessagesResponse, AnthropicError> {
+        if request.stream {
+            return Err(AnthropicError::InvalidArgument("When stream is true, use complete_stream() instead".into()));
+        }
+        self.post("/v1/messages", request).await
+    }
+
+    pub async fn messages_stream(&self, request: MessagesRequest) -> Result<MessagesResponseStream, AnthropicError> {
+        if !request.stream {
+            return Err(AnthropicError::InvalidArgument("When stream is false, use complete() instead".into()));
+        }
+        Ok(self
+            .post_stream(
+                "/v1/messages",
+                request,
+                [
+                    "message_start",
+                    "message_delta",
+                    "message_stop",
+                    "content_block_start",
+                    "content_block_delta",
+                    "content_block_stop",
+                ],
+            )
+            .await)
     }
 
     /// Get the API key.
@@ -109,10 +139,11 @@ impl Client {
     /// A Stream of Server-Sent Events
     /// # Errors
     /// * `AnthropicError` - If the request fails.
-    pub(crate) async fn post_stream<I, O>(
+    pub(crate) async fn post_stream<I, O, const N: usize>(
         &self,
         path: &str,
         request: I,
+        event_types: [&'static str; N],
     ) -> Pin<Box<dyn Stream<Item = Result<O, AnthropicError>> + Send>>
     where
         I: Serialize,
@@ -127,9 +158,8 @@ impl Client {
             .eventsource()
             .unwrap();
 
-        stream(event_source).await
+        stream(event_source, event_types).await
     }
-
     /// Deserialize response body from either error object or actual response object.
     /// # Arguments
     /// * `response` - The response to process.
@@ -220,7 +250,10 @@ impl Client {
     }
 }
 
-async fn stream<O>(mut event_source: EventSource) -> Pin<Box<dyn Stream<Item = Result<O, AnthropicError>> + Send>>
+async fn stream<O, const N: usize>(
+    mut event_source: EventSource,
+    event_types: [&'static str; N],
+) -> Pin<Box<dyn Stream<Item = Result<O, AnthropicError>> + Send>>
 where
     O: DeserializeOwned + Send + 'static,
 {
@@ -232,25 +265,45 @@ where
                 Ok(event) => match event {
                     Event::Open => continue,
                     Event::Message(message) => {
-                        match message.event.as_ref() {
-                            "ping" => continue,
-                            "completion" => {
-                                let response = match serde_json::from_str::<O>(&message.data) {
-                                    Ok(output) => Ok(output),
-                                    Err(e) => Err(map_deserialization_error(e, message.data.as_bytes())),
-                                };
+                        let event = message.event.as_str();
+                        if event == "ping" {
+                            continue;
+                        }
 
-                                if let Err(_e) = tx.send(response) {
-                                    // rx dropped
-                                    break;
-                                }
+                        let response = if event == "error" {
+                            match serde_json::from_str::<StreamError>(&message.data) {
+                                Ok(e) => Err(AnthropicError::StreamError(e)),
+                                Err(e) => Err(map_deserialization_error(e, message.data.as_bytes())),
                             }
-                            _ => continue,
+                        } else if event_types.contains(&event) {
+                            match serde_json::from_str::<O>(&message.data) {
+                                Ok(output) => Ok(output),
+                                Err(e) => Err(map_deserialization_error(e, message.data.as_bytes())),
+                            }
+                        } else {
+                            Err(AnthropicError::StreamError(StreamError {
+                                error_type: "unknown_event_type".to_string(),
+                                message: format!("Unknown event type: {event}"),
+                            }))
+                        };
+                        let cancel = response.is_err();
+                        if tx.send(response).is_err() || cancel {
+                            // rx dropped or other error
+                            break;
                         }
                     }
                 },
                 Err(e) => {
-                    if let Err(_e) = tx.send(Err(AnthropicError::StreamError(e.to_string()))) {
+                    if let reqwest_eventsource::Error::StreamEnded = e {
+                        break;
+                    }
+                    if tx
+                        .send(Err(AnthropicError::StreamError(StreamError {
+                            error_type: "sse_error".to_string(),
+                            message: e.to_string(),
+                        })))
+                        .is_err()
+                    {
                         // rx dropped
                         break;
                     }

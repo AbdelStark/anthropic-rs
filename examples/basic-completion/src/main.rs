@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Send a completion request.
     let complete_response = client.complete(complete_request).await?;
 
-    println!("completion response: {complete_response:?}");
+    println!("completion response:\n\n{complete_response:#?}");
 
     Ok(())
 }
