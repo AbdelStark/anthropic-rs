@@ -2,5 +2,7 @@
 members = [
     "basic-completion",
     "streaming-completion",
+    "basic-messages",
+    "streaming-messages",
 ]
 resolver = "2"
