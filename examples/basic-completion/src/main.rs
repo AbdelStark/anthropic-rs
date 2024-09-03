@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .prompt(format!("{HUMAN_PROMPT}How many toes do dogs have?{AI_PROMPT}"))
         .model("claude-instant-1".to_string())
         .max_tokens_to_sample(256usize)
-        .stream(false)
+        .stream_response(false)
         .stop_sequences(vec![HUMAN_PROMPT.to_string()])
         .build()?;
 
