@@ -197,7 +197,7 @@ pub enum ContentBlockDelta {
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct MessageDeltaUsage {
-    output_tokens: usize,
+    pub output_tokens: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
