@@ -43,11 +43,24 @@ pub enum Role {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "type")]
+pub enum ImageSource {
+    #[serde(rename = "base64")]
+    Base64 {
+        media_type: String,
+        data: String,
+    },
+    #[serde(rename = "url")]
+    Url {
+        url: String,
+    },
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum ContentBlock {
     Text { text: String },
-    // TODO better types
-    Image { source: String, media_type: String, data: String },
+    Image { source: ImageSource },
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Builder, PartialEq, Eq)]
