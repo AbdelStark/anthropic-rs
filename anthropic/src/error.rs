@@ -27,10 +27,10 @@ pub enum AnthropicError {
     InvalidHeaderValue(#[from] InvalidHeaderValue),
     /// Eventsource setup failure.
     #[error("eventsource error: {0}")]
-    EventSource(#[from] EventSourceError),
+    EventSource(#[from] Box<EventSourceError>),
     /// Eventsource request could not be cloned.
     #[error("eventsource request could not be cloned: {0}")]
-    EventSourceCannotClone(#[from] CannotCloneRequestError),
+    EventSourceCannotClone(#[from] Box<CannotCloneRequestError>),
     /// Unexpected response payload.
     #[error("unexpected response (status {status}): {body}")]
     UnexpectedResponse { status: u16, body: String },
