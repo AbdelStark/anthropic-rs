@@ -75,9 +75,10 @@ impl ClientBuilder {
         let api_base = self.api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_string());
         let api_version = self.api_version.unwrap_or_else(|| DEFAULT_API_VERSION.to_string());
         let timeout = self.timeout.unwrap_or_else(|| Duration::from_secs(60));
-        let http_client = self.http_client.unwrap_or_else(|| {
-            reqwest::Client::builder().timeout(timeout).build().expect("failed to build reqwest client")
-        });
+        let http_client = match self.http_client {
+            Some(client) => client,
+            None => reqwest::Client::builder().timeout(timeout).build()?,
+        };
 
         Ok(Client {
             api_key,
@@ -161,21 +162,20 @@ impl Client {
         mut request: MessagesRequest,
     ) -> Result<MessagesResponseStream, AnthropicError> {
         request.stream = Some(true);
-        Ok(self.post_stream("/v1/messages", &request).await)
+        self.post_stream("/v1/messages", &request).await
     }
 
-    fn headers(&self) -> HeaderMap {
+    fn headers(&self) -> Result<HeaderMap, AnthropicError> {
         let mut headers = HeaderMap::new();
-        headers.insert(API_KEY_HEADER, HeaderValue::from_str(&self.api_key).unwrap());
-        headers.insert(VERSION_HEADER, HeaderValue::from_str(&self.api_version).unwrap());
+        headers.insert(API_KEY_HEADER, HeaderValue::from_str(&self.api_key)?);
+        headers.insert(VERSION_HEADER, HeaderValue::from_str(&self.api_version)?);
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-        headers
-            .insert(USER_AGENT, HeaderValue::from_str(&format!("anthropic-rs/{}", env!("CARGO_PKG_VERSION"))).unwrap());
+        headers.insert(USER_AGENT, HeaderValue::from_str(&format!("anthropic-rs/{}", env!("CARGO_PKG_VERSION")))?);
         if let Some(beta) = &self.beta {
-            headers.insert(BETA_HEADER, HeaderValue::from_str(beta).unwrap());
+            headers.insert(BETA_HEADER, HeaderValue::from_str(beta)?);
         }
-        headers
+        Ok(headers)
     }
 
     async fn post<I, O>(&self, path: &str, request: &I) -> Result<O, AnthropicError>
@@ -184,7 +184,7 @@ impl Client {
         O: DeserializeOwned,
     {
         let request =
-            self.http_client.post(format!("{}{path}", self.api_base)).headers(self.headers()).json(request).build()?;
+            self.http_client.post(format!("{}{path}", self.api_base)).headers(self.headers()?).json(request).build()?;
 
         self.execute(request).await
     }
@@ -193,19 +193,18 @@ impl Client {
         &self,
         path: &str,
         request: &I,
-    ) -> Pin<Box<dyn Stream<Item = Result<MessagesStreamEvent, AnthropicError>> + Send>>
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<MessagesStreamEvent, AnthropicError>> + Send>>, AnthropicError>
     where
         I: Serialize + ?Sized,
     {
         let event_source = self
             .http_client
             .post(format!("{}{path}", self.api_base))
-            .headers(self.headers())
+            .headers(self.headers()?)
             .json(request)
-            .eventsource()
-            .expect("failed to initialize event source");
+            .eventsource()?;
 
-        stream(event_source).await
+        Ok(stream(event_source).await)
     }
 
     async fn execute<O>(&self, request: reqwest::Request) -> Result<O, AnthropicError>
@@ -216,9 +215,12 @@ impl Client {
 
         match request.try_clone() {
             Some(request) => {
-                backoff::future::retry(self.backoff.clone(), || async {
+                backoff::future::retry(self.backoff.clone(), move || async {
+                    let request = request.try_clone().ok_or_else(|| {
+                        backoff::Error::Permanent(AnthropicError::InvalidRequest("request could not be cloned".into()))
+                    })?;
                     let response = client
-                        .execute(request.try_clone().expect("request clone"))
+                        .execute(request)
                         .await
                         .map_err(AnthropicError::Http)
                         .map_err(backoff::Error::Permanent)?;

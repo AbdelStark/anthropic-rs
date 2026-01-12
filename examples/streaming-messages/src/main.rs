@@ -9,15 +9,20 @@ fn extend_messages(messages: &mut Vec<Message>, event: &MessagesStreamEvent) {
     match event {
         MessagesStreamEvent::MessageStart { message } => messages.push(message.clone()),
         MessagesStreamEvent::ContentBlockStart { content_block, .. } => {
-            messages.last_mut().unwrap().content.push(content_block.clone());
+            if let Some(last) = messages.last_mut() {
+                last.content.push(content_block.clone());
+            }
         }
-        MessagesStreamEvent::ContentBlockDelta { index, delta } => match (
-            messages.last_mut().unwrap().content.get_mut(*index),
-            delta,
-        ) {
-            (Some(ContentBlock::Text { text }), ContentBlockDelta::TextDelta { text: delta }) => *text += delta,
-            _ => (),
-        },
+        MessagesStreamEvent::ContentBlockDelta { index, delta } => {
+            if let Some(last) = messages.last_mut() {
+                match (last.content.get_mut(*index), delta) {
+                    (Some(ContentBlock::Text { text }), ContentBlockDelta::TextDelta { text: delta }) => {
+                        *text += delta;
+                    }
+                    _ => (),
+                }
+            }
+        }
         _ => (),
     }
 }

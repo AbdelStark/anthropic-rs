@@ -1,5 +1,7 @@
 use std::fmt;
 
+use reqwest::header::InvalidHeaderValue;
+use reqwest_eventsource::Error as EventSourceError;
 use serde::{Deserialize, Serialize};
 
 /// Errors returned by the Anthropic SDK.
@@ -20,6 +22,12 @@ pub enum AnthropicError {
     /// Missing required environment variable.
     #[error("missing environment variable: {0}")]
     MissingEnvironment(String),
+    /// Invalid header value provided for request headers.
+    #[error("invalid header value: {0}")]
+    InvalidHeaderValue(#[from] InvalidHeaderValue),
+    /// Eventsource setup failure.
+    #[error("eventsource error: {0}")]
+    EventSource(#[from] EventSourceError),
     /// Unexpected response payload.
     #[error("unexpected response (status {status}): {body}")]
     UnexpectedResponse { status: u16, body: String },
