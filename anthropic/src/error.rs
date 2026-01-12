@@ -1,7 +1,7 @@
 use std::fmt;
 
 use reqwest::header::InvalidHeaderValue;
-use reqwest_eventsource::Error as EventSourceError;
+use reqwest_eventsource::{CannotCloneRequestError, Error as EventSourceError};
 use serde::{Deserialize, Serialize};
 
 /// Errors returned by the Anthropic SDK.
@@ -28,6 +28,9 @@ pub enum AnthropicError {
     /// Eventsource setup failure.
     #[error("eventsource error: {0}")]
     EventSource(#[from] EventSourceError),
+    /// Eventsource request could not be cloned.
+    #[error("eventsource request could not be cloned: {0}")]
+    EventSourceCannotClone(#[from] CannotCloneRequestError),
     /// Unexpected response payload.
     #[error("unexpected response (status {status}): {body}")]
     UnexpectedResponse { status: u16, body: String },

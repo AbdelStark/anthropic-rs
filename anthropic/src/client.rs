@@ -215,32 +215,36 @@ impl Client {
 
         match request.try_clone() {
             Some(request) => {
-                backoff::future::retry(self.backoff.clone(), move || async {
+                backoff::future::retry(self.backoff.clone(), || {
                     let request = request.try_clone().ok_or_else(|| {
                         backoff::Error::Permanent(AnthropicError::InvalidRequest("request could not be cloned".into()))
-                    })?;
-                    let response = client
-                        .execute(request)
-                        .await
-                        .map_err(AnthropicError::Http)
-                        .map_err(backoff::Error::Permanent)?;
+                    });
+                    let client = client.clone();
+                    async move {
+                        let request = request?;
+                        let response = client
+                            .execute(request)
+                            .await
+                            .map_err(AnthropicError::Http)
+                            .map_err(backoff::Error::Permanent)?;
 
-                    let status = response.status();
-                    let bytes =
-                        response.bytes().await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
+                        let status = response.status();
+                        let bytes =
+                            response.bytes().await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
 
-                    if !status.is_success() {
-                        let error = parse_error(status.as_u16(), bytes.as_ref());
-                        if status.as_u16() == 429 {
-                            return Err(backoff::Error::Transient { err: error, retry_after: None });
+                        if !status.is_success() {
+                            let error = parse_error(status.as_u16(), bytes.as_ref());
+                            if status.as_u16() == 429 {
+                                return Err(backoff::Error::Transient { err: error, retry_after: None });
+                            }
+                            return Err(backoff::Error::Permanent(error));
                         }
-                        return Err(backoff::Error::Permanent(error));
-                    }
 
-                    let response = serde_json::from_slice::<O>(bytes.as_ref())
-                        .map_err(AnthropicError::Deserialize)
-                        .map_err(backoff::Error::Permanent)?;
-                    Ok(response)
+                        let response = serde_json::from_slice::<O>(bytes.as_ref())
+                            .map_err(AnthropicError::Deserialize)
+                            .map_err(backoff::Error::Permanent)?;
+                        Ok(response)
+                    }
                 })
                 .await
             }
