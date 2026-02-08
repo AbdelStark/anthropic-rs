@@ -5,8 +5,8 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use tokio_stream::Stream;
 
-use crate::error::AnthropicError;
 use crate::DEFAULT_MODEL;
+use crate::error::AnthropicError;
 
 #[derive(Clone, Serialize, Default, Debug, Builder, PartialEq)]
 #[builder(pattern = "mutable")]

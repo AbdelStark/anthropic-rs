@@ -1,13 +1,13 @@
 use std::pin::Pin;
 
-use reqwest::header::{HeaderMap, ACCEPT, CONTENT_TYPE};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, USER_AGENT};
 use reqwest_eventsource::{Event, EventSource, RequestBuilderExt};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tokio_stream::{Stream, StreamExt};
 
 use crate::config::AnthropicConfig;
-use crate::error::{map_deserialization_error, AnthropicError, WrappedError};
+use crate::error::{AnthropicError, WrappedError, map_deserialization_error};
 use crate::types::{
     CompleteRequest, CompleteResponse, CompleteResponseStream, MessagesRequest, MessagesResponse,
     MessagesResponseStream, StreamError,
@@ -104,6 +104,7 @@ impl Client {
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         headers.insert(ACCEPT, "application/json".parse().unwrap());
         headers.insert(API_VERSION_HEADER_KEY, API_VERSION.parse().unwrap());
+        headers.insert(USER_AGENT, format!("anthropic-rs/{}", env!("CARGO_PKG_VERSION")).parse().unwrap());
         headers
     }
 
@@ -338,5 +339,19 @@ impl Default for Client {
     /// Create a new client from the default configuration.
     fn default() -> Self {
         Self::try_from(AnthropicConfig::default()).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::header::USER_AGENT;
+
+    #[test]
+    fn test_headers_contain_user_agent() {
+        let client = ClientBuilder::default().api_key("test-key".to_string()).build().unwrap();
+        let headers = client.headers();
+        let ua = headers.get(USER_AGENT).expect("User-Agent header should be set");
+        assert!(ua.to_str().unwrap().starts_with("anthropic-rs/"));
     }
 }
