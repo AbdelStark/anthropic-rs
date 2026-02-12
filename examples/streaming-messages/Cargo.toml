@@ -5,10 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anthropic = {path = "../../anthropic"}
-tokio = { version = "1.25.0", features = ["full"] }
-tokio-stream = "0.1.14"
-env_logger = "0.10.0"
-log = "0.4.17"
-dotenv = "0.15.0"
-
+anthropic = { path = "../../anthropic" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-stream = "0.1"
+dotenvy = "0.15"

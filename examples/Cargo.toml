@@ -1,7 +1,5 @@
 [workspace]
 members = [
-    "basic-completion",
-    "streaming-completion",
     "basic-messages",
     "streaming-messages",
 ]

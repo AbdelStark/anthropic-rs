@@ -1,13 +1,12 @@
 [package]
 name = "anthropic"
-version = "0.0.8"
-authors = ["Abdelhamid Bakhta <@abdelhamidbakhta>"]
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
 homepage = "https://github.com/abdelhamidbakhta/anthropic-rs"
-repository = "https://github.com/abdelhamidbakhta/antrhopic-rs"
+repository = "https://github.com/abdelhamidbakhta/anthropic-rs"
 categories = ["api-bindings", "web-programming", "asynchronous"]
-keywords = ["anthropic", "async", "ai", "gpt", "claude"]
+keywords = ["anthropic", "claude", "ai", "sdk", "async"]
 description = "Anthropic Rust SDK."
 readme = "README.md"
 
@@ -19,29 +18,15 @@ rustls = ["reqwest/rustls-tls-native-roots"]
 native-tls = ["reqwest/native-tls"]
 
 [dependencies]
-backoff = { version = "0.4.0", features = ["tokio"], default-features = false }
-config = { features = ["ron"], default-features = false, version = "0.13.3" }
-derive_builder = { default-features = false, version = "0.12.0" }
-lazy_static = "1.4.0"
-log = "0.4.17"
-reqwest = { version = "0.11.17", features = ["json"], default-features = false }
-serde = { default-features = false, version = "1.0.163" }
-serde_derive = "1.0.163"
-serde_json = { default-features = false, version = "1.0.96" }
-tokio = { version = "1", default-features = false }
-tokio-stream = { default-features = false, version = "0.1.14" }
-thiserror = "1.0.40"
-rustc_version = "0.4.0"
-reqwest-eventsource = "0.4.0"
+backoff = { version = "0.4", features = ["tokio"], default-features = false }
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
+reqwest-eventsource = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-stream = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = [
-    "macros",
-    "rt-multi-thread",
-] }
-dotenv = "0.15.0"
-cargo-husky = { version = "1", default-features = false, features = [
-    "precommit-hook",
-    "run-cargo-test",
-    "run-cargo-clippy",
-] }
+dotenvy = "0.15"

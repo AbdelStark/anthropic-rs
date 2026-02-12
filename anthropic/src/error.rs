@@ -1,50 +1,58 @@
-//! Definition of errors used in the library.
-use config::ConfigError;
-use serde::Deserialize;
+use std::fmt;
 
-use crate::types::StreamError;
+use reqwest::header::InvalidHeaderValue;
+use reqwest_eventsource::{CannotCloneRequestError, Error as EventSourceError};
+use serde::{Deserialize, Serialize};
 
+/// Errors returned by the Anthropic SDK.
 #[derive(Debug, thiserror::Error)]
 pub enum AnthropicError {
-    /// Underlying error from reqwest library after an API call was made
+    /// Underlying HTTP error from reqwest.
     #[error("http error: {0}")]
-    Reqwest(#[from] reqwest::Error),
-    /// OpenAI returns error object with details of API call failure
-    #[error("{}: {}", .0.r#type, .0.message)]
-    ApiError(ApiError),
-    /// Error when a response cannot be deserialized into a Rust type
+    Http(#[from] reqwest::Error),
+    /// Anthropic API returned an error payload.
+    #[error("api error: {0}")]
+    Api(ApiError),
+    /// Error when a response cannot be deserialized into a Rust type.
     #[error("failed to deserialize api response: {0}")]
-    JSONDeserialize(serde_json::Error),
-    /// Error on SSE streaming
-    #[error("stream failed: {0}")]
-    StreamError(StreamError),
-    /// Error from client side validation
-    /// or when builder fails to build request before making API call
-    #[error("invalid args: {0}")]
-    InvalidArgument(String),
+    Deserialize(#[from] serde_json::Error),
+    /// Invalid request arguments.
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+    /// Missing required environment variable.
+    #[error("missing environment variable: {0}")]
+    MissingEnvironment(String),
+    /// Invalid header value provided for request headers.
+    #[error("invalid header value: {0}")]
+    InvalidHeaderValue(#[from] InvalidHeaderValue),
+    /// Eventsource setup failure.
+    #[error("eventsource error: {0}")]
+    EventSource(#[from] Box<EventSourceError>),
+    /// Eventsource request could not be cloned.
+    #[error("eventsource request could not be cloned: {0}")]
+    EventSourceCannotClone(#[from] Box<CannotCloneRequestError>),
+    /// Unexpected response payload.
+    #[error("unexpected response (status {status}): {body}")]
+    UnexpectedResponse { status: u16, body: String },
 }
 
-/// Anthropic API returns error object on failure
-#[derive(Debug, Deserialize)]
+/// Anthropic API error payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiError {
     pub message: String,
-    pub r#type: String,
+    #[serde(rename = "type")]
+    pub error_type: String,
     pub param: Option<serde_json::Value>,
     pub code: Option<serde_json::Value>,
 }
 
-impl From<ConfigError> for AnthropicError {
-    fn from(e: ConfigError) -> Self {
-        Self::InvalidArgument(e.to_string())
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.error_type, self.message)
     }
 }
 
-/// Wrapper to deserialize the error object nested in "error" JSON key
-#[derive(Debug, Deserialize)]
-pub(crate) struct WrappedError {
-    pub(crate) error: ApiError,
-}
-
-pub(crate) fn map_deserialization_error(e: serde_json::Error, _bytes: &[u8]) -> AnthropicError {
-    AnthropicError::JSONDeserialize(e)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ErrorResponse {
+    pub error: ApiError,
 }

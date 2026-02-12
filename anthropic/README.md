@@ -1,72 +1,89 @@
-# Anthropic unofficial Rust SDK  🦀
+# Anthropic Rust SDK 🦀
 
-[![GitHub Workflow Status](https://github.com/abdelhamidbakhta/anthropic-rs/actions/workflows/test.yml/badge.svg)](https://github.com/abdelhamidbakhta/anthropic-rs/actions/workflows/test.yml)
-[![Project license](https://img.shields.io/github/license/abdelhamidbakhta/anthropic-rs.svg?style=flat-square)](LICENSE)
-[![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/abdelhamidbakhta/anthropic-rs/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
 [![Rust docs](https://docs.rs/anthropic/badge.svg)](https://docs.rs/anthropic)
 [![Rust crate](https://img.shields.io/crates/v/anthropic.svg)](https://crates.io/crates/anthropic)
 
-`anthropic-rs` is an unofficial Rust library to interact with Anthropic REST API, with async support.
+`anthropic` is a production-grade Rust SDK for the Anthropic Messages API, with streaming support and
+first-class typed requests.
 
-Wanna play with [Claude](https://www.anthropic.com/product) in Rust? This is the place to be!
+## Features
+
+- ✅ Messages API (`/v1/messages`)
+- ✅ Streaming responses (Server-Sent Events)
+- ✅ Tool use / tool results
+- ✅ Typed builders and ergonomic helpers
+
+## Installation
+
+```bash
+cargo add anthropic
+```
 
 ## Usage
 
 ```rust
+use anthropic::types::{ContentBlock, Message, MessagesRequestBuilder, Role};
+use anthropic::Client;
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    // Load the environment variables from the .env file.
-    dotenv().ok();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::from_env()?;
 
-    // Build from configuration.
-    let cfg = AnthropicConfig::new()?;
-    let client = Client::try_from(cfg)?;
+    let messages = vec![Message {
+        role: Role::User,
+        content: vec![ContentBlock::text("Write a short limerick about Rust.")],
+    }];
 
-    let complete_request = CompleteRequestBuilder::default()
-        .prompt(format!("{HUMAN_PROMPT}How many toes do dogs have?{AI_PROMPT}"))
-        .model("claude-instant-1".to_string())
-        .stream_response(false)
-        .stop_sequences(vec![HUMAN_PROMPT.to_string()])
+    let request = MessagesRequestBuilder::new("claude-3-5-sonnet-20240620", messages, 256)
+        .temperature(0.7)
         .build()?;
 
-    // Send a completion request.
-    let complete_response = client.complete(complete_request).await?;
-
-    println!("completion response: {complete_response:?}");
+    let response = client.messages(request).await?;
+    println!("{response:#?}");
 
     Ok(())
 }
 ```
 
-You can find full working examples in the [examples](../examples) directory.
+### Streaming
+
+```rust
+use anthropic::types::{ContentBlock, Message, MessagesRequestBuilder, Role};
+use anthropic::Client;
+use futures_util::StreamExt;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::from_env()?;
+
+    let messages = vec![Message {
+        role: Role::User,
+        content: vec![ContentBlock::text("Stream a haiku about Claude.")],
+    }];
+
+    let request = MessagesRequestBuilder::new("claude-3-5-sonnet-20240620", messages, 128).build()?;
+    let mut stream = client.messages_stream(request).await?;
+
+    while let Some(event) = stream.next().await {
+        println!("{event:?}");
+    }
+
+    Ok(())
+}
+```
 
 ## Configuration
 
-anthropic-rs uses `dotenv` to automatically load environment variables from a `.env` file. You can also set these variables manually in your environment. Here is an example of the configuration variables used:
+The client reads configuration from environment variables:
 
-```bash
-ANTHROPIC_API_KEY="..."
-ANTHROPIC_DEFAULT_MODEL="claude-v1"
-```
+- `ANTHROPIC_API_KEY` (required)
+- `ANTHROPIC_API_BASE` (optional, defaults to `https://api.anthropic.com`)
+- `ANTHROPIC_API_VERSION` (optional, defaults to `2023-06-01`)
+- `ANTHROPIC_BETA` (optional, for beta headers like `tools-2024-04-04`)
+- `ANTHROPIC_TIMEOUT_SECS` (optional, defaults to 60 seconds)
 
-Replace the "..." with your actual tokens and preferences.
-
-You can also set these variables manually when you crate a new `Client` instance, see more details in usage section.
-
-## Features
-
-- [x] Completion (`/v1/complete`)
-- [ ] Manage stream mode
-
-## Contributing
-
-Contributions to `anthropic-rs` are welcomed! Feel free to submit a pull request or create an issue.
+You can also build a client manually with `ClientBuilder`.
 
 ## License
 
-anthropic-rs is licensed under the [MIT License](LICENSE).
-
-## Acknowledgements
-
-- [Anthropic API reference](https://console.anthropic.com/docs/api/reference) for the clear and concise documentation.
-- The architecture of the SDK is inspired by [async-openai](https://github.com/64bit/async-openai), an asynchronous Rust library developed for OpenAI. We extend our heartfelt gratitude to the creators for their invaluable work. We envisage significant benefits in developing a standardized interface for interaction with various AI GPT providers' APIs. As an example, it would facilitate the development of versatile wrappers that could seamlessly interface with different providers.
+MIT

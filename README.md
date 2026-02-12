@@ -1,3 +1,20 @@
+# Anthropic Rust SDK
+
+Production-grade Rust SDK for the Anthropic Messages API, with streaming and tool use support.
+
+## Workspace Layout
+
+- `anthropic/` — the library crate
+- `examples/` — runnable examples
+- `docs/` — additional documentation
+
+## Quickstart
+
+```bash
+export ANTHROPIC_API_KEY="your-key"
+cd examples/basic-messages
+cargo run
+```
 
 ## Contributors ✨
 

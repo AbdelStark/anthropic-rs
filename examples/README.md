@@ -9,14 +9,14 @@ cd <example_name>
 cargo run
 ```
 
-For example, to run the `basic-completion` example:
+For example, to run the `basic-messages` example:
 
 ```bash
-cd basic-completion
+cd basic-messages
 cargo run
 ```
 
 ## List of examples
 
-- [basic-completion](basic-completion): A basic example of completion.
-- [streaming-completion](streaming-completion): An example of streaming the completion response.
+- [basic-messages](basic-messages): A basic example of the Messages API.
+- [streaming-messages](streaming-messages): An example of streaming Messages responses.
