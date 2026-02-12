@@ -202,7 +202,8 @@ impl Client {
             .post(format!("{}{path}", self.api_base))
             .headers(self.headers()?)
             .json(request)
-            .eventsource()?;
+            .eventsource()
+            .map_err(|err| AnthropicError::EventSourceCannotClone(err.into()))?;
 
         Ok(stream(event_source).await)
     }
