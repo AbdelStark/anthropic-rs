@@ -225,6 +225,8 @@ pub enum StopReason {
     MaxTokens,
     StopSequence,
     ToolUse,
+    PauseTurn,
+    Refusal,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
