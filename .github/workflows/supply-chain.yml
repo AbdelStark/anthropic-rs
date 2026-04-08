@@ -1,0 +1,60 @@
+name: Supply Chain
+
+# Supply-chain hardening: runs `cargo audit` (RustSec advisory database) and
+# `cargo deny` (licenses, duplicates, source allowlist) on every PR and push
+# to main, plus on a daily schedule so that newly-disclosed vulnerabilities
+# surface even when the repo is quiet.
+#
+# This workflow is the single failure point that protects us from an
+# advisory showing up in a transitive dependency. It does not build the
+# crate — it only walks the lockfile and Cargo.toml metadata — so it runs
+# quickly enough to block merges without slowing CI materially.
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  schedule:
+    # Every day at 06:00 UTC. Cron fires even on quiet days so a new CVE
+    # surfaces via a red daily run rather than waiting for the next push.
+    - cron: "0 6 * * *"
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Required for `rustsec/audit-check` to surface findings as a status check.
+  issues: write
+  checks: write
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Run every check category independently so the failure message
+        # points at the exact policy that failed.
+        checks:
+          - advisories
+          - bans
+          - licenses
+          - sources
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
+          arguments: --all-features

@@ -1,8 +1,115 @@
 //! Types for Anthropic's Messages API.
 
+use backoff::ExponentialBackoff;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AnthropicError;
+
+/// Per-request retry policy override.
+///
+/// By default every outgoing request inherits the [`ExponentialBackoff`]
+/// configured on the [`Client`](crate::Client), which retries on 429 responses
+/// up to the backoff's `max_elapsed_time`. Individual requests can opt out
+/// (for interactive paths that should fail fast) or supply a custom backoff
+/// (for background workers that should retry for longer).
+///
+/// Use this through the request builders:
+///
+/// ```no_run
+/// use anthropic::types::{Message, MessagesRequestBuilder, RetryPolicy};
+/// use std::time::Duration;
+///
+/// # fn example() -> Result<(), anthropic::AnthropicError> {
+/// // Fail fast on 429: no retries at all.
+/// let interactive = MessagesRequestBuilder::new("claude", vec![Message::user("hi")], 128)
+///     .no_retries()
+///     .build()?;
+///
+/// // Long-running worker: retry for up to an hour.
+/// let mut backoff = backoff::ExponentialBackoff::default();
+/// backoff.max_elapsed_time = Some(Duration::from_secs(3600));
+/// let worker = MessagesRequestBuilder::new("claude", vec![Message::user("hi")], 128)
+///     .backoff(backoff)
+///     .build()?;
+/// # let _ = (interactive, worker);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// `RetryPolicy` carries transport state only. It is intentionally excluded
+/// from structural equality and is never serialized onto the wire.
+#[derive(Clone, Default)]
+pub struct RetryPolicy {
+    kind: RetryPolicyKind,
+}
+
+#[derive(Clone, Default)]
+pub(crate) enum RetryPolicyKind {
+    /// Inherit the client-wide backoff configuration.
+    #[default]
+    ClientDefault,
+    /// Disable retries entirely: fail on the first non-success response.
+    Disabled,
+    /// Use a caller-supplied backoff for this request only.
+    Custom(ExponentialBackoff),
+}
+
+impl RetryPolicy {
+    /// Use the client's configured retry policy (the default).
+    pub fn client_default() -> Self {
+        Self { kind: RetryPolicyKind::ClientDefault }
+    }
+
+    /// Disable retries entirely for this request.
+    ///
+    /// The call will fail on the first non-success HTTP response, including
+    /// 429 rate-limit responses. Pair this with interactive request paths
+    /// where latency matters more than eventual success.
+    pub fn none() -> Self {
+        Self { kind: RetryPolicyKind::Disabled }
+    }
+
+    /// Use a caller-supplied [`ExponentialBackoff`] for this request.
+    pub fn custom(backoff: ExponentialBackoff) -> Self {
+        Self { kind: RetryPolicyKind::Custom(backoff) }
+    }
+
+    /// Returns `true` if this policy disables retries.
+    pub fn is_disabled(&self) -> bool {
+        matches!(self.kind, RetryPolicyKind::Disabled)
+    }
+
+    /// Returns `true` if this policy defers to the client's configuration.
+    pub fn is_client_default(&self) -> bool {
+        matches!(self.kind, RetryPolicyKind::ClientDefault)
+    }
+
+    pub(crate) fn kind(&self) -> &RetryPolicyKind {
+        &self.kind
+    }
+}
+
+impl std::fmt::Debug for RetryPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            RetryPolicyKind::ClientDefault => f.write_str("RetryPolicy::ClientDefault"),
+            RetryPolicyKind::Disabled => f.write_str("RetryPolicy::Disabled"),
+            RetryPolicyKind::Custom(_) => f.write_str("RetryPolicy::Custom(..)"),
+        }
+    }
+}
+
+// `ExponentialBackoff` is opaque and does not implement `PartialEq`; two
+// requests with different backoff shapes still round-trip identically on the
+// wire, so excluding retry policy from struct equality keeps
+// `#[derive(PartialEq)]` meaningful for the user-facing request types.
+impl PartialEq for RetryPolicy {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for RetryPolicy {}
 
 /// Role a message belongs to in a conversation.
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -384,6 +491,9 @@ pub struct MessagesRequest {
     pub thinking: Option<ThinkingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<ServiceTier>,
+    /// Per-request retry policy. Carried in memory only; never serialized.
+    #[serde(skip, default)]
+    pub retry_policy: RetryPolicy,
 }
 
 #[derive(Debug, Default)]
@@ -402,6 +512,7 @@ pub struct MessagesRequestBuilder {
     tool_choice: Option<ToolChoice>,
     thinking: Option<ThinkingConfig>,
     service_tier: Option<ServiceTier>,
+    retry_policy: RetryPolicy,
 }
 
 impl MessagesRequestBuilder {
@@ -479,6 +590,37 @@ impl MessagesRequestBuilder {
         self
     }
 
+    /// Override the retry policy for this request.
+    ///
+    /// See [`RetryPolicy`] for the available variants. By default, requests
+    /// inherit the client-wide [`backoff::ExponentialBackoff`] configured on
+    /// [`ClientBuilder::backoff`](crate::ClientBuilder::backoff).
+    pub fn retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
+    }
+
+    /// Send this request with a caller-supplied [`ExponentialBackoff`].
+    ///
+    /// Equivalent to `.retry_policy(RetryPolicy::custom(backoff))`. Use this
+    /// to stretch (or tighten) retries on a single call without rebuilding
+    /// the [`Client`](crate::Client).
+    pub fn backoff(mut self, backoff: ExponentialBackoff) -> Self {
+        self.retry_policy = RetryPolicy::custom(backoff);
+        self
+    }
+
+    /// Disable retries for this request.
+    ///
+    /// Equivalent to `.retry_policy(RetryPolicy::none())`. The call will fail
+    /// on the first non-success HTTP response — including 429 rate-limit
+    /// responses — which is the correct behavior for interactive paths where
+    /// latency matters more than eventual success.
+    pub fn no_retries(mut self) -> Self {
+        self.retry_policy = RetryPolicy::none();
+        self
+    }
+
     pub fn build(self) -> Result<MessagesRequest, AnthropicError> {
         let model = self.model.ok_or_else(|| AnthropicError::InvalidRequest("model is required".into()))?;
         if model.is_empty() {
@@ -524,6 +666,7 @@ impl MessagesRequestBuilder {
             tool_choice: self.tool_choice,
             thinking: self.thinking,
             service_tier: self.service_tier,
+            retry_policy: self.retry_policy,
         })
     }
 }
@@ -898,6 +1041,53 @@ mod tests {
         assert!(!obj.contains_key("temperature"));
         assert!(!obj.contains_key("thinking"));
         assert!(!obj.contains_key("service_tier"));
+        // `retry_policy` is an in-memory transport setting — it must not leak
+        // onto the wire under any circumstance.
+        assert!(!obj.contains_key("retry_policy"));
+    }
+
+    #[test]
+    fn retry_policy_defaults_to_client_default() {
+        let policy = RetryPolicy::default();
+        assert!(policy.is_client_default());
+        assert!(!policy.is_disabled());
+    }
+
+    #[test]
+    fn retry_policy_none_is_disabled() {
+        let policy = RetryPolicy::none();
+        assert!(policy.is_disabled());
+        assert!(!policy.is_client_default());
+    }
+
+    #[test]
+    fn retry_policy_custom_reports_neither_default_nor_disabled() {
+        let policy = RetryPolicy::custom(ExponentialBackoff::default());
+        assert!(!policy.is_client_default());
+        assert!(!policy.is_disabled());
+    }
+
+    #[test]
+    fn retry_policy_is_excluded_from_struct_equality() {
+        // Two otherwise-identical requests differing only in retry policy
+        // compare equal — retry policy is transport state, not part of the
+        // semantic request payload.
+        let base = MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).build().unwrap();
+        let no_retries = MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).no_retries().build().unwrap();
+        assert_eq!(base, no_retries);
+    }
+
+    #[test]
+    fn messages_request_builder_sets_retry_policy() {
+        let req = MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).no_retries().build().unwrap();
+        assert!(req.retry_policy.is_disabled());
+
+        let req = MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10)
+            .backoff(ExponentialBackoff::default())
+            .build()
+            .unwrap();
+        assert!(!req.retry_policy.is_disabled());
+        assert!(!req.retry_policy.is_client_default());
     }
 
     #[test]

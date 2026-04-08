@@ -1,0 +1,65 @@
+# cargo-deny configuration.
+#
+# `cargo deny check` enforces advisory, license, and ban policies across the
+# full dependency tree. This file tracks what we consider a policy violation
+# and is checked in CI on every PR — see `.github/workflows/supply-chain.yml`.
+#
+# Keep the bar tight by default; grant an exception only with an inline
+# comment explaining *why* the exception is temporary and what would make it
+# removable.
+
+[graph]
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-pc-windows-msvc" },
+]
+all-features = true
+
+[advisories]
+# Any unpatched vulnerability fails CI. `yanked = "warn"` rather than "deny"
+# lets a yanked transitive dependency be reported without instantly blocking
+# merges — use `ignore` below to silence a known yank only after a fix PR is
+# in flight.
+version = 2
+yanked = "warn"
+ignore = []
+
+[licenses]
+# Allowlist-only. Anything not on this list forces a manual review via a
+# license exception (see `exceptions` below).
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+    "MIT-0",
+    "BSL-1.0",
+]
+confidence-threshold = 0.92
+exceptions = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+# Deny a known-insecure or abandoned package by name here as soon as you
+# learn about it. Empty by default.
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

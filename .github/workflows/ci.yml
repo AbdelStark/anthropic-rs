@@ -53,3 +53,36 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo doc
         run: cargo doc --workspace --no-deps --all-features
+
+  msrv:
+    # Build and test the crate on the minimum supported Rust version
+    # declared in `anthropic/Cargo.toml` (`package.rust-version`) so that a
+    # PR cannot accidentally introduce a dependency or language feature
+    # that pushes the toolchain forward without us noticing.
+    #
+    # If this job fails, either roll back the offending change or bump
+    # `rust-version` intentionally and document it in CHANGELOG.md.
+    #
+    # This crate does not commit a Cargo.lock (it is a library), so MSRV is
+    # verified against freshly-resolved dependency versions. A transitive
+    # dep release can therefore shift the MSRV independently of this repo —
+    # when that happens, pin the offending dep in Cargo.toml or bump our
+    # own `rust-version`, whichever is less costly to downstream users.
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          msrv=$(grep '^rust-version' anthropic/Cargo.toml | head -n1 | tr -d ' "' | cut -d= -f2)
+          echo "version=${msrv}" >> "$GITHUB_OUTPUT"
+          echo "MSRV pinned to ${msrv}"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build (all features)
+        run: cargo build --workspace --all-features
+      - name: cargo test (all features)
+        run: cargo test --workspace --all-features
