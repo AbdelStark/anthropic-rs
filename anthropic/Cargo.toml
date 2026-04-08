@@ -30,3 +30,4 @@ tokio-stream = "0.1"
 
 [dev-dependencies]
 dotenvy = "0.15"
+wiremock = "0.6"

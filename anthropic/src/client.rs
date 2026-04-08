@@ -9,7 +9,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio_stream::Stream;
 
+use crate::count_tokens::{CountTokensRequest, CountTokensResponse};
 use crate::error::{AnthropicError, ErrorResponse};
+use crate::models::{ListModelsParams, Model, ModelList};
 use crate::types::{MessagesRequest, MessagesResponse, MessagesStreamEvent};
 
 const DEFAULT_API_BASE: &str = "https://api.anthropic.com";
@@ -106,6 +108,11 @@ impl Client {
         ClientBuilder::new().api_key(api_key).build()
     }
 
+    /// Shortcut for [`ClientBuilder::new`].
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::new()
+    }
+
     pub fn from_env() -> Result<Self, AnthropicError> {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
             .map_err(|_| AnthropicError::MissingEnvironment("ANTHROPIC_API_KEY".into()))?;
@@ -165,6 +172,23 @@ impl Client {
         self.post_stream("/v1/messages", &request).await
     }
 
+    /// `POST /v1/messages/count_tokens` — compute the input-token cost of a
+    /// Messages request without actually generating a response.
+    pub async fn count_tokens(&self, request: CountTokensRequest) -> Result<CountTokensResponse, AnthropicError> {
+        self.post("/v1/messages/count_tokens", &request).await
+    }
+
+    /// `GET /v1/models` — list every model available to the authenticated key.
+    pub async fn list_models(&self, params: &ListModelsParams) -> Result<ModelList, AnthropicError> {
+        self.get("/v1/models", &params.as_query()).await
+    }
+
+    /// `GET /v1/models/{model_id}` — fetch metadata about a single model.
+    pub async fn get_model(&self, model_id: &str) -> Result<Model, AnthropicError> {
+        let path = format!("/v1/models/{}", model_id);
+        self.get::<Model>(&path, &[]).await
+    }
+
     fn headers(&self) -> Result<HeaderMap, AnthropicError> {
         let mut headers = HeaderMap::new();
         headers.insert(API_KEY_HEADER, HeaderValue::from_str(&self.api_key)?);
@@ -185,6 +209,16 @@ impl Client {
     {
         let request =
             self.http_client.post(format!("{}{path}", self.api_base)).headers(self.headers()?).json(request).build()?;
+
+        self.execute(request).await
+    }
+
+    async fn get<O>(&self, path: &str, query: &[(&str, String)]) -> Result<O, AnthropicError>
+    where
+        O: DeserializeOwned,
+    {
+        let request =
+            self.http_client.get(format!("{}{path}", self.api_base)).headers(self.headers()?).query(query).build()?;
 
         self.execute(request).await
     }
