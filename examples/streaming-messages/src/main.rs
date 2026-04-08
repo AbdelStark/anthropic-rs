@@ -7,7 +7,9 @@ use tokio_stream::StreamExt;
 
 fn extend_messages(messages: &mut Vec<Message>, event: &MessagesStreamEvent) {
     match event {
-        MessagesStreamEvent::MessageStart { message } => messages.push(message.clone()),
+        MessagesStreamEvent::MessageStart { message } => {
+            messages.push(Message { role: message.role, content: message.content.clone() });
+        }
         MessagesStreamEvent::ContentBlockStart { content_block, .. } => {
             if let Some(last) = messages.last_mut() {
                 last.content.push(content_block.clone());
@@ -16,7 +18,7 @@ fn extend_messages(messages: &mut Vec<Message>, event: &MessagesStreamEvent) {
         MessagesStreamEvent::ContentBlockDelta { index, delta } => {
             if let Some(last) = messages.last_mut() {
                 match (last.content.get_mut(*index), delta) {
-                    (Some(ContentBlock::Text { text }), ContentBlockDelta::TextDelta { text: delta }) => {
+                    (Some(ContentBlock::Text { text, .. }), ContentBlockDelta::TextDelta { text: delta }) => {
                         *text += delta;
                     }
                     _ => (),
