@@ -31,6 +31,7 @@ pub mod count_tokens;
 pub mod error;
 pub mod models;
 pub mod stream;
+pub mod tool_loop;
 pub mod types;
 
 pub use batches::{
@@ -42,3 +43,4 @@ pub use count_tokens::{CountTokensRequest, CountTokensRequestBuilder, CountToken
 pub use error::{AnthropicError, ApiError};
 pub use models::{ListModelsParams, Model, ModelList};
 pub use stream::{collect, collect_stream, StreamAccumulator};
+pub use tool_loop::{run_tool_loop, ToolLoopConfig, ToolOutput};
