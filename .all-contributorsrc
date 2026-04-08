@@ -4,7 +4,7 @@
   "repoType": "github",
   "repoHost": "https://github.com",
   "files": [
-    "anthropic/README.md"
+    "README.md"
   ],
   "imageSize": 100,
   "commit": true,
@@ -13,13 +13,58 @@
     {
       "login": "AbdelStark",
       "name": "A₿del ∞/21M 🐺 - 🐱",
-      "avatar_url": "https://avatars.githubusercontent.com/u/45264458?v=4",
+      "avatar_url": "https://github.com/AbdelStark.png?size=100",
       "profile": "https://github.com/AbdelStark",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "ofalvai",
+      "name": "ofalvai",
+      "avatar_url": "https://github.com/ofalvai.png?size=100",
+      "profile": "https://github.com/ofalvai",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "JohnAllen",
+      "name": "JohnAllen",
+      "avatar_url": "https://github.com/JohnAllen.png?size=100",
+      "profile": "https://github.com/JohnAllen",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "Philipp-M",
+      "name": "Philipp-M",
+      "avatar_url": "https://github.com/Philipp-M.png?size=100",
+      "profile": "https://github.com/Philipp-M",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "wyatt-avilla",
+      "name": "wyatt-avilla",
+      "avatar_url": "https://github.com/wyatt-avilla.png?size=100",
+      "profile": "https://github.com/wyatt-avilla",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "aoikurokawa",
+      "name": "aoikurokawa",
+      "avatar_url": "https://github.com/aoikurokawa.png?size=100",
+      "profile": "https://github.com/aoikurokawa",
       "contributions": [
         "code"
       ]
     }
   ],
-  "contributorsPerLine": 7,
+  "contributorsPerLine": 6,
   "linkToUsage": true
 }
