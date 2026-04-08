@@ -141,6 +141,45 @@ async fn messages_rejects_stream_true_requests() {
 }
 
 #[tokio::test]
+async fn messages_retries_429_then_succeeds() {
+    let server = MockServer::start().await;
+
+    // First two attempts return 429 with a Retry-After header. The third
+    // attempt returns a normal response. The default ExponentialBackoff has
+    // an initial interval of 500ms, and Retry-After takes precedence — the
+    // test runs in well under a second per attempt.
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0").set_body_json(json!({
+            "type": "error",
+            "error": {"type": "rate_limit_error", "message": "slow down"}
+        })))
+        .up_to_n_times(2)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "msg_ok",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "ok"}],
+            "model": "claude",
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = build_client(&server);
+    let response = client.messages(sample_request()).await.expect("retried success");
+    assert_eq!(response.text(), "ok");
+}
+
+#[tokio::test]
 async fn messages_preserves_conversation_roundtrip() {
     let server = MockServer::start().await;
 

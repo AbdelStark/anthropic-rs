@@ -1,4 +1,4 @@
-use anthropic::types::{ContentBlock, Message, MessagesRequestBuilder, Role};
+use anthropic::types::{Message, MessagesRequestBuilder};
 use anthropic::Client;
 use dotenvy::dotenv;
 
@@ -8,12 +8,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::from_env()?;
 
-    let messages = vec![Message {
-        role: Role::User,
-        content: vec![ContentBlock::text("Say hello in one sentence.")],
-    }];
-
-    let request = MessagesRequestBuilder::new("claude-3-5-sonnet-20240620", messages, 128).build()?;
+    let request = MessagesRequestBuilder::new(
+        "claude-3-5-sonnet-20240620",
+        vec![Message::user("Say hello in one sentence.")],
+        128,
+    )
+    .build()?;
     let response = client.messages(request).await?;
 
     println!("messages response:\n{response:#?}");

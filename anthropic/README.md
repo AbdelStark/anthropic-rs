@@ -198,9 +198,10 @@ println!("{}", response.text());
 
 - `run_tool_loop` handles the entire call-execute-reply cycle — it clones
   the original request each iteration (keeping `tools` / `tool_choice` /
-  `system` intact), collects every `tool_use` block in parallel, runs your
-  executor, appends `tool_result` blocks, and stops once the model returns
-  a tool-free response or `max_iterations` is hit.
+  `system` intact), collects every `tool_use` block from the assistant
+  turn, awaits your executor on each one in order, appends the matching
+  `tool_result` blocks, and stops once the model returns a tool-free
+  response or `max_iterations` is hit.
 - Return `ToolOutput::error("...")` to surface a tool-level failure to the
   model; return `Err(AnthropicError)` to abort the loop instead.
 
@@ -348,6 +349,10 @@ jobs:
 ```
 
 That exercises `Client::from_env()`, request building, and `/v1/messages` end to end.
+
+## Changelog
+
+User-visible changes are tracked in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Contributors ✨
 

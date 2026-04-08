@@ -17,9 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let request = MessagesRequestBuilder::new(
         "claude-3-5-sonnet-20240620",
-        vec![Message::user(
-            "Compare today's weather in Paris and Rome in one sentence, using the get_weather tool.",
-        )],
+        vec![Message::user("Compare today's weather in Paris and Rome in one sentence, using the get_weather tool.")],
         512,
     )
     .tools(vec![Tool::new(
