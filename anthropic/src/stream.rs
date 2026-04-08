@@ -20,8 +20,7 @@ use tokio_stream::Stream;
 use crate::client::MessagesResponseStream;
 use crate::error::AnthropicError;
 use crate::types::{
-    ContentBlock, ContentBlockDelta, MessageDelta, MessageDeltaUsage, MessagesResponse, MessagesStreamEvent, Role,
-    Usage,
+    ContentBlock, ContentBlockDelta, MessageDelta, MessageDeltaUsage, MessagesResponse, MessagesStreamEvent, Usage,
 };
 
 /// Running state of a partially-received streamed message.
@@ -196,25 +195,10 @@ pub async fn collect(stream: MessagesResponseStream) -> Result<MessagesResponse,
     collect_stream(stream).await
 }
 
-/// Seed an empty [`MessagesResponse`] that the accumulator can populate when
-/// a provider sends a `message_start` without content blocks pre-populated.
-pub fn empty_response(model: impl Into<String>) -> MessagesResponse {
-    MessagesResponse {
-        id: String::new(),
-        message_type: "message".into(),
-        role: Role::Assistant,
-        content: Vec::new(),
-        model: model.into(),
-        stop_reason: None,
-        stop_sequence: None,
-        usage: Usage::default(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{MessageDelta, MessageDeltaUsage, StopReason};
+    use crate::types::{MessageDelta, MessageDeltaUsage, Role, StopReason};
     use futures_util::stream;
     use serde_json::json;
 
@@ -417,13 +401,5 @@ mod tests {
         let s = stream::iter(events);
         let result = collect_stream(s).await;
         assert!(matches!(result, Err(AnthropicError::InvalidRequest(_))));
-    }
-
-    #[test]
-    fn empty_response_helper_seeds_defaults() {
-        let resp = empty_response("claude");
-        assert_eq!(resp.model, "claude");
-        assert_eq!(resp.role, Role::Assistant);
-        assert!(resp.content.is_empty());
     }
 }

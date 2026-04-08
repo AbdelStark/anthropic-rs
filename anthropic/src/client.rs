@@ -77,8 +77,17 @@ impl ClientBuilder {
 
     pub fn build(self) -> Result<Client, AnthropicError> {
         let api_key = self.api_key.ok_or_else(|| AnthropicError::InvalidRequest("api_key is required".into()))?;
+        if api_key.trim().is_empty() {
+            return Err(AnthropicError::InvalidRequest("api_key must not be empty".into()));
+        }
         let api_base = self.api_base.unwrap_or_else(|| DEFAULT_API_BASE.to_string());
+        if api_base.trim().is_empty() {
+            return Err(AnthropicError::InvalidRequest("api_base must not be empty".into()));
+        }
         let api_version = self.api_version.unwrap_or_else(|| DEFAULT_API_VERSION.to_string());
+        if api_version.trim().is_empty() {
+            return Err(AnthropicError::InvalidRequest("api_version must not be empty".into()));
+        }
         let timeout = self.timeout.unwrap_or_else(|| Duration::from_secs(60));
         let http_client = match self.http_client {
             Some(client) => client,
@@ -97,6 +106,11 @@ impl ClientBuilder {
 }
 
 /// The client to interact with the Anthropic API.
+///
+/// `Client` is cheap to clone — the underlying `reqwest::Client` is reference
+/// counted internally — so most applications will build one client at startup
+/// and clone it into request handlers as needed.
+#[derive(Clone)]
 pub struct Client {
     api_key: String,
     api_base: String,
@@ -104,6 +118,19 @@ pub struct Client {
     beta: Option<String>,
     http_client: reqwest::Client,
     backoff: ExponentialBackoff,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never print the raw API key — debug-printing a client is a common
+        // way to leak credentials into logs.
+        f.debug_struct("Client")
+            .field("api_key", &"<redacted>")
+            .field("api_base", &self.api_base)
+            .field("api_version", &self.api_version)
+            .field("beta", &self.beta)
+            .finish()
+    }
 }
 
 impl Client {
@@ -116,9 +143,18 @@ impl Client {
         ClientBuilder::new()
     }
 
+    /// Build a client from `ANTHROPIC_*` environment variables.
+    ///
+    /// Errors:
+    /// - [`AnthropicError::MissingEnvironment`] if `ANTHROPIC_API_KEY` is unset
+    ///   or empty.
+    /// - [`AnthropicError::InvalidRequest`] if `ANTHROPIC_TIMEOUT_SECS` is set
+    ///   but cannot be parsed as a positive `u64`.
     pub fn from_env() -> Result<Self, AnthropicError> {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| AnthropicError::MissingEnvironment("ANTHROPIC_API_KEY".into()))?;
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| AnthropicError::MissingEnvironment("ANTHROPIC_API_KEY".into()))?;
 
         let mut builder = ClientBuilder::new().api_key(api_key);
 
@@ -135,9 +171,12 @@ impl Client {
         }
 
         if let Ok(timeout) = std::env::var("ANTHROPIC_TIMEOUT_SECS") {
-            if let Ok(timeout_secs) = timeout.parse::<u64>() {
-                builder = builder.timeout(Duration::from_secs(timeout_secs));
-            }
+            let timeout_secs = timeout.parse::<u64>().map_err(|_| {
+                AnthropicError::InvalidRequest(format!(
+                    "ANTHROPIC_TIMEOUT_SECS must be a positive integer (got {timeout:?})"
+                ))
+            })?;
+            builder = builder.timeout(Duration::from_secs(timeout_secs));
         }
 
         builder.build()
@@ -308,115 +347,84 @@ impl Client {
     where
         O: DeserializeOwned,
     {
-        let client = self.http_client.clone();
-
-        match request.try_clone() {
-            Some(request) => {
-                backoff::future::retry(self.backoff.clone(), || {
-                    let request = request.try_clone().ok_or_else(|| {
-                        backoff::Error::Permanent(AnthropicError::InvalidRequest("request could not be cloned".into()))
-                    });
-                    let client = client.clone();
-                    async move {
-                        let request = request?;
-                        let response = client
-                            .execute(request)
-                            .await
-                            .map_err(AnthropicError::Http)
-                            .map_err(backoff::Error::Permanent)?;
-
-                        let status = response.status();
-                        let bytes =
-                            response.bytes().await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
-
-                        if !status.is_success() {
-                            let error = parse_error(status.as_u16(), bytes.as_ref());
-                            if status.as_u16() == 429 {
-                                return Err(backoff::Error::Transient { err: error, retry_after: None });
-                            }
-                            return Err(backoff::Error::Permanent(error));
-                        }
-
-                        let response = serde_json::from_slice::<O>(bytes.as_ref())
-                            .map_err(AnthropicError::Deserialize)
-                            .map_err(backoff::Error::Permanent)?;
-                        Ok(response)
-                    }
-                })
-                .await
-            }
-            None => {
-                let response = client.execute(request).await?;
-                process_response(response).await
-            }
-        }
+        let bytes = self.execute_bytes(request).await?;
+        serde_json::from_slice::<O>(&bytes).map_err(AnthropicError::Deserialize)
     }
 
     async fn execute_raw(&self, request: reqwest::Request) -> Result<String, AnthropicError> {
+        let bytes = self.execute_bytes(request).await?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// Send a request with retry-on-429, returning the raw success body.
+    ///
+    /// All response parsing happens in callers; this method only deals with
+    /// transport, retries, and HTTP-level error mapping.
+    async fn execute_bytes(&self, request: reqwest::Request) -> Result<Vec<u8>, AnthropicError> {
         let client = self.http_client.clone();
 
-        match request.try_clone() {
-            Some(request) => {
-                backoff::future::retry(self.backoff.clone(), || {
-                    let request = request.try_clone().ok_or_else(|| {
-                        backoff::Error::Permanent(AnthropicError::InvalidRequest("request could not be cloned".into()))
-                    });
-                    let client = client.clone();
-                    async move {
-                        let request = request?;
-                        let response = client
-                            .execute(request)
-                            .await
-                            .map_err(AnthropicError::Http)
-                            .map_err(backoff::Error::Permanent)?;
+        // `reqwest::Request` cannot be cloned when its body is a stream. In
+        // that case we cannot safely retry — fall back to a single attempt.
+        let Some(retryable) = request.try_clone() else {
+            let response = client.execute(request).await?;
+            return process_bytes(response).await;
+        };
 
-                        let status = response.status();
-                        let bytes =
-                            response.bytes().await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
+        backoff::future::retry(self.backoff.clone(), || {
+            let request = retryable.try_clone().ok_or_else(|| {
+                backoff::Error::Permanent(AnthropicError::InvalidRequest("request could not be cloned".into()))
+            });
+            let client = client.clone();
+            async move {
+                let request = request?;
+                let response =
+                    client.execute(request).await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
 
-                        if !status.is_success() {
-                            let error = parse_error(status.as_u16(), bytes.as_ref());
-                            if status.as_u16() == 429 {
-                                return Err(backoff::Error::Transient { err: error, retry_after: None });
-                            }
-                            return Err(backoff::Error::Permanent(error));
-                        }
-
-                        let body = String::from_utf8_lossy(bytes.as_ref()).into_owned();
-                        Ok(body)
-                    }
-                })
-                .await
-            }
-            None => {
-                let response = client.execute(request).await?;
                 let status = response.status();
-                let bytes = response.bytes().await?;
+                let retry_after = parse_retry_after(response.headers().get(reqwest::header::RETRY_AFTER));
+                let bytes = response.bytes().await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
+
                 if !status.is_success() {
-                    return Err(parse_error(status.as_u16(), bytes.as_ref()));
+                    let error = parse_error(status.as_u16(), bytes.as_ref());
+                    if status.as_u16() == 429 {
+                        return Err(backoff::Error::Transient { err: error, retry_after });
+                    }
+                    return Err(backoff::Error::Permanent(error));
                 }
-                Ok(String::from_utf8_lossy(bytes.as_ref()).into_owned())
+
+                Ok(bytes.to_vec())
             }
-        }
+        })
+        .await
     }
 }
 
-pub type MessagesResponseStream = Pin<Box<dyn Stream<Item = Result<MessagesStreamEvent, AnthropicError>> + Send>>;
+/// Parse a `Retry-After` header value into a [`Duration`].
+///
+/// Honors both forms supported by RFC 7231:
+/// - integer seconds (e.g. `Retry-After: 30`)
+/// - HTTP-date (currently ignored — exotic in practice for `429` responses)
+///
+/// Returns `None` if the header is missing, malformed, or contains zero.
+fn parse_retry_after(header: Option<&reqwest::header::HeaderValue>) -> Option<Duration> {
+    let value = header?.to_str().ok()?.trim();
+    let seconds = value.parse::<u64>().ok()?;
+    if seconds == 0 {
+        return None;
+    }
+    Some(Duration::from_secs(seconds))
+}
 
-async fn process_response<O>(response: reqwest::Response) -> Result<O, AnthropicError>
-where
-    O: DeserializeOwned,
-{
+async fn process_bytes(response: reqwest::Response) -> Result<Vec<u8>, AnthropicError> {
     let status = response.status();
     let bytes = response.bytes().await?;
-
     if !status.is_success() {
         return Err(parse_error(status.as_u16(), bytes.as_ref()));
     }
-
-    let response = serde_json::from_slice::<O>(bytes.as_ref())?;
-    Ok(response)
+    Ok(bytes.to_vec())
 }
+
+pub type MessagesResponseStream = Pin<Box<dyn Stream<Item = Result<MessagesStreamEvent, AnthropicError>> + Send>>;
 
 fn parse_error(status: u16, bytes: &[u8]) -> AnthropicError {
     if let Ok(error) = serde_json::from_slice::<ErrorResponse>(bytes) {
@@ -464,7 +472,10 @@ async fn stream(
                         break;
                     }
 
-                    let error = AnthropicError::InvalidRequest(format!("stream error: {e}"));
+                    // Surface transport errors with their typed variant so
+                    // callers can match on `AnthropicError::EventSource`
+                    // instead of string-sniffing an `InvalidRequest`.
+                    let error = AnthropicError::EventSource(Box::new(e));
                     if tx.send(Err(error)).is_err() {
                         break;
                     }
@@ -476,4 +487,83 @@ async fn stream(
     });
 
     Box::pin(tokio_stream::wrappers::UnboundedReceiverStream::new(rx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::header::HeaderValue;
+
+    #[test]
+    fn builder_rejects_missing_api_key() {
+        let err = ClientBuilder::new().build().unwrap_err();
+        assert!(matches!(err, AnthropicError::InvalidRequest(_)));
+    }
+
+    #[test]
+    fn builder_rejects_empty_api_key() {
+        let err = ClientBuilder::new().api_key("   ").build().unwrap_err();
+        assert!(matches!(err, AnthropicError::InvalidRequest(_)));
+        assert!(format!("{err}").contains("api_key"));
+    }
+
+    #[test]
+    fn builder_rejects_empty_api_base() {
+        let err = ClientBuilder::new().api_key("k").api_base("").build().unwrap_err();
+        assert!(format!("{err}").contains("api_base"));
+    }
+
+    #[test]
+    fn debug_redacts_api_key() {
+        let client = Client::builder().api_key("super-secret-key").build().unwrap();
+        let rendered = format!("{client:?}");
+        assert!(rendered.contains("<redacted>"));
+        assert!(!rendered.contains("super-secret-key"));
+    }
+
+    #[test]
+    fn client_is_clone() {
+        let client = Client::builder().api_key("k").build().unwrap();
+        let _cloned = client.clone();
+    }
+
+    #[test]
+    fn parse_retry_after_handles_seconds() {
+        let header = HeaderValue::from_static("30");
+        assert_eq!(parse_retry_after(Some(&header)), Some(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn parse_retry_after_ignores_zero_and_invalid() {
+        let zero = HeaderValue::from_static("0");
+        assert_eq!(parse_retry_after(Some(&zero)), None);
+        let date = HeaderValue::from_static("Wed, 21 Oct 2015 07:28:00 GMT");
+        assert_eq!(parse_retry_after(Some(&date)), None);
+        assert_eq!(parse_retry_after(None), None);
+    }
+
+    #[test]
+    fn parse_error_falls_back_to_unexpected_response() {
+        let err = parse_error(500, b"not json");
+        match err {
+            AnthropicError::UnexpectedResponse { status, body } => {
+                assert_eq!(status, 500);
+                assert_eq!(body, "not json");
+            }
+            other => panic!("expected UnexpectedResponse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_error_decodes_api_payload() {
+        let body = br#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#;
+        let err = parse_error(429, body);
+        match err {
+            AnthropicError::Api(api) => {
+                assert_eq!(api.error_type, "rate_limit_error");
+                assert_eq!(api.message, "slow down");
+            }
+            other => panic!("expected Api, got {other:?}"),
+        }
+    }
 }

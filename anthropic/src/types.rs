@@ -493,6 +493,21 @@ impl MessagesRequestBuilder {
         if max_tokens == 0 {
             return Err(AnthropicError::InvalidRequest("max_tokens must be greater than zero".into()));
         }
+        // The Messages API rejects sampling parameters outside the documented
+        // ranges with an opaque 400; catching them locally produces a far more
+        // actionable error and avoids a wasted round-trip.
+        if let Some(temperature) = self.temperature {
+            if !(0.0..=1.0).contains(&temperature) {
+                return Err(AnthropicError::InvalidRequest(format!(
+                    "temperature must be in [0.0, 1.0] (got {temperature})"
+                )));
+            }
+        }
+        if let Some(top_p) = self.top_p {
+            if !(0.0..=1.0).contains(&top_p) {
+                return Err(AnthropicError::InvalidRequest(format!("top_p must be in [0.0, 1.0] (got {top_p})")));
+            }
+        }
 
         Ok(MessagesRequest {
             model,
@@ -818,6 +833,28 @@ mod tests {
     fn messages_request_builder_rejects_empty_model() {
         let err = MessagesRequestBuilder::new("", vec![Message::user("hi")], 10).build().unwrap_err();
         assert!(format!("{err}").contains("model"));
+    }
+
+    #[test]
+    fn messages_request_builder_rejects_temperature_out_of_range() {
+        let err = MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).temperature(1.5).build().unwrap_err();
+        assert!(format!("{err}").contains("temperature"));
+
+        let err =
+            MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).temperature(-0.1).build().unwrap_err();
+        assert!(format!("{err}").contains("temperature"));
+    }
+
+    #[test]
+    fn messages_request_builder_rejects_top_p_out_of_range() {
+        let err = MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).top_p(1.5).build().unwrap_err();
+        assert!(format!("{err}").contains("top_p"));
+    }
+
+    #[test]
+    fn messages_request_builder_accepts_temperature_at_bounds() {
+        MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).temperature(0.0).build().unwrap();
+        MessagesRequestBuilder::new("m", vec![Message::user("hi")], 10).temperature(1.0).build().unwrap();
     }
 
     #[test]
