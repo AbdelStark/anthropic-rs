@@ -19,4 +19,8 @@ cargo run
 ## List of examples
 
 - [basic-messages](basic-messages): A basic example of the Messages API.
-- [streaming-messages](streaming-messages): An example of streaming Messages responses.
+- [streaming-messages](streaming-messages): An example of streaming Messages
+  responses, using `StreamAccumulator` to rebuild the final `MessagesResponse`.
+- [tool-loop](tool-loop): End-to-end tool-use demo driven by
+  `run_tool_loop`. The helper handles the call/execute/reply cycle so the
+  example only needs to implement the tool logic.

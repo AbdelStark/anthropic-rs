@@ -2,5 +2,6 @@
 members = [
     "basic-messages",
     "streaming-messages",
+    "tool-loop",
 ]
 resolver = "2"
