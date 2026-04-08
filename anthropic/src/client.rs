@@ -9,6 +9,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio_stream::Stream;
 
+use crate::batches::{
+    parse_results_jsonl, BatchResultItem, CreateBatchRequest, ListBatchesParams, MessageBatch, MessageBatchList,
+};
 use crate::count_tokens::{CountTokensRequest, CountTokensResponse};
 use crate::error::{AnthropicError, ErrorResponse};
 use crate::models::{ListModelsParams, Model, ModelList};
@@ -189,6 +192,44 @@ impl Client {
         self.get::<Model>(&path, &[]).await
     }
 
+    /// `POST /v1/messages/batches` — submit a new batch of Messages requests.
+    pub async fn create_batch(&self, request: CreateBatchRequest) -> Result<MessageBatch, AnthropicError> {
+        request.validate()?;
+        self.post("/v1/messages/batches", &request).await
+    }
+
+    /// `GET /v1/messages/batches` — list batches submitted by this workspace.
+    pub async fn list_batches(&self, params: &ListBatchesParams) -> Result<MessageBatchList, AnthropicError> {
+        self.get("/v1/messages/batches", &params.as_query()).await
+    }
+
+    /// `GET /v1/messages/batches/{id}` — fetch current metadata for a batch.
+    pub async fn get_batch(&self, batch_id: &str) -> Result<MessageBatch, AnthropicError> {
+        let path = format!("/v1/messages/batches/{}", batch_id);
+        self.get::<MessageBatch>(&path, &[]).await
+    }
+
+    /// `POST /v1/messages/batches/{id}/cancel` — request cancellation of a
+    /// batch. Already-completed requests remain available in the results.
+    pub async fn cancel_batch(&self, batch_id: &str) -> Result<MessageBatch, AnthropicError> {
+        let path = format!("/v1/messages/batches/{}/cancel", batch_id);
+        self.post_empty::<MessageBatch>(&path).await
+    }
+
+    /// `DELETE /v1/messages/batches/{id}` — permanently delete a batch.
+    pub async fn delete_batch(&self, batch_id: &str) -> Result<serde_json::Value, AnthropicError> {
+        let path = format!("/v1/messages/batches/{}", batch_id);
+        self.delete::<serde_json::Value>(&path).await
+    }
+
+    /// `GET /v1/messages/batches/{id}/results` — download and parse the
+    /// JSON-Lines results file for a completed batch.
+    pub async fn get_batch_results(&self, batch_id: &str) -> Result<Vec<BatchResultItem>, AnthropicError> {
+        let path = format!("/v1/messages/batches/{}/results", batch_id);
+        let body = self.get_raw(&path).await?;
+        parse_results_jsonl(&body)
+    }
+
     fn headers(&self) -> Result<HeaderMap, AnthropicError> {
         let mut headers = HeaderMap::new();
         headers.insert(API_KEY_HEADER, HeaderValue::from_str(&self.api_key)?);
@@ -220,6 +261,27 @@ impl Client {
         let request =
             self.http_client.get(format!("{}{path}", self.api_base)).headers(self.headers()?).query(query).build()?;
 
+        self.execute(request).await
+    }
+
+    async fn get_raw(&self, path: &str) -> Result<String, AnthropicError> {
+        let request = self.http_client.get(format!("{}{path}", self.api_base)).headers(self.headers()?).build()?;
+        self.execute_raw(request).await
+    }
+
+    async fn post_empty<O>(&self, path: &str) -> Result<O, AnthropicError>
+    where
+        O: DeserializeOwned,
+    {
+        let request = self.http_client.post(format!("{}{path}", self.api_base)).headers(self.headers()?).build()?;
+        self.execute(request).await
+    }
+
+    async fn delete<O>(&self, path: &str) -> Result<O, AnthropicError>
+    where
+        O: DeserializeOwned,
+    {
+        let request = self.http_client.delete(format!("{}{path}", self.api_base)).headers(self.headers()?).build()?;
         self.execute(request).await
     }
 
@@ -286,6 +348,54 @@ impl Client {
             None => {
                 let response = client.execute(request).await?;
                 process_response(response).await
+            }
+        }
+    }
+
+    async fn execute_raw(&self, request: reqwest::Request) -> Result<String, AnthropicError> {
+        let client = self.http_client.clone();
+
+        match request.try_clone() {
+            Some(request) => {
+                backoff::future::retry(self.backoff.clone(), || {
+                    let request = request.try_clone().ok_or_else(|| {
+                        backoff::Error::Permanent(AnthropicError::InvalidRequest("request could not be cloned".into()))
+                    });
+                    let client = client.clone();
+                    async move {
+                        let request = request?;
+                        let response = client
+                            .execute(request)
+                            .await
+                            .map_err(AnthropicError::Http)
+                            .map_err(backoff::Error::Permanent)?;
+
+                        let status = response.status();
+                        let bytes =
+                            response.bytes().await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
+
+                        if !status.is_success() {
+                            let error = parse_error(status.as_u16(), bytes.as_ref());
+                            if status.as_u16() == 429 {
+                                return Err(backoff::Error::Transient { err: error, retry_after: None });
+                            }
+                            return Err(backoff::Error::Permanent(error));
+                        }
+
+                        let body = String::from_utf8_lossy(bytes.as_ref()).into_owned();
+                        Ok(body)
+                    }
+                })
+                .await
+            }
+            None => {
+                let response = client.execute(request).await?;
+                let status = response.status();
+                let bytes = response.bytes().await?;
+                if !status.is_success() {
+                    return Err(parse_error(status.as_u16(), bytes.as_ref()));
+                }
+                Ok(String::from_utf8_lossy(bytes.as_ref()).into_owned())
             }
         }
     }
