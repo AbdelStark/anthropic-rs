@@ -1,7 +1,9 @@
 use std::pin::Pin;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use backoff::ExponentialBackoff;
+pub use backoff::ExponentialBackoff;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE, USER_AGENT};
 use reqwest_eventsource::{Event, EventSource, RequestBuilderExt};
@@ -15,7 +17,7 @@ use crate::batches::{
 use crate::count_tokens::{CountTokensRequest, CountTokensResponse};
 use crate::error::{AnthropicError, ErrorResponse};
 use crate::models::{ListModelsParams, Model, ModelList};
-use crate::types::{MessagesRequest, MessagesResponse, MessagesStreamEvent};
+use crate::types::{MessagesRequest, MessagesResponse, MessagesStreamEvent, RetryPolicy};
 
 const DEFAULT_API_BASE: &str = "https://api.anthropic.com";
 const DEFAULT_API_VERSION: &str = "2023-06-01";
@@ -203,7 +205,8 @@ impl Client {
             return Err(AnthropicError::InvalidRequest("stream=true requests must use messages_stream".into()));
         }
         request.stream = None;
-        self.post("/v1/messages", &request).await
+        let retry = self.resolve_retry(&request.retry_policy);
+        self.post("/v1/messages", &request, retry).await
     }
 
     pub async fn messages_stream(
@@ -217,56 +220,78 @@ impl Client {
     /// `POST /v1/messages/count_tokens` — compute the input-token cost of a
     /// Messages request without actually generating a response.
     pub async fn count_tokens(&self, request: CountTokensRequest) -> Result<CountTokensResponse, AnthropicError> {
-        self.post("/v1/messages/count_tokens", &request).await
+        let retry = self.resolve_retry(&request.retry_policy);
+        self.post("/v1/messages/count_tokens", &request, retry).await
     }
 
     /// `GET /v1/models` — list every model available to the authenticated key.
     pub async fn list_models(&self, params: &ListModelsParams) -> Result<ModelList, AnthropicError> {
-        self.get("/v1/models", &params.as_query()).await
+        let retry = self.resolve_retry(&RetryPolicy::default());
+        self.get("/v1/models", &params.as_query(), retry).await
     }
 
     /// `GET /v1/models/{model_id}` — fetch metadata about a single model.
     pub async fn get_model(&self, model_id: &str) -> Result<Model, AnthropicError> {
         let path = format!("/v1/models/{}", model_id);
-        self.get::<Model>(&path, &[]).await
+        let retry = self.resolve_retry(&RetryPolicy::default());
+        self.get::<Model>(&path, &[], retry).await
     }
 
     /// `POST /v1/messages/batches` — submit a new batch of Messages requests.
     pub async fn create_batch(&self, request: CreateBatchRequest) -> Result<MessageBatch, AnthropicError> {
         request.validate()?;
-        self.post("/v1/messages/batches", &request).await
+        let retry = self.resolve_retry(&request.retry_policy);
+        self.post("/v1/messages/batches", &request, retry).await
     }
 
     /// `GET /v1/messages/batches` — list batches submitted by this workspace.
     pub async fn list_batches(&self, params: &ListBatchesParams) -> Result<MessageBatchList, AnthropicError> {
-        self.get("/v1/messages/batches", &params.as_query()).await
+        let retry = self.resolve_retry(&RetryPolicy::default());
+        self.get("/v1/messages/batches", &params.as_query(), retry).await
     }
 
     /// `GET /v1/messages/batches/{id}` — fetch current metadata for a batch.
     pub async fn get_batch(&self, batch_id: &str) -> Result<MessageBatch, AnthropicError> {
         let path = format!("/v1/messages/batches/{}", batch_id);
-        self.get::<MessageBatch>(&path, &[]).await
+        let retry = self.resolve_retry(&RetryPolicy::default());
+        self.get::<MessageBatch>(&path, &[], retry).await
     }
 
     /// `POST /v1/messages/batches/{id}/cancel` — request cancellation of a
     /// batch. Already-completed requests remain available in the results.
     pub async fn cancel_batch(&self, batch_id: &str) -> Result<MessageBatch, AnthropicError> {
         let path = format!("/v1/messages/batches/{}/cancel", batch_id);
-        self.post_empty::<MessageBatch>(&path).await
+        let retry = self.resolve_retry(&RetryPolicy::default());
+        self.post_empty::<MessageBatch>(&path, retry).await
     }
 
     /// `DELETE /v1/messages/batches/{id}` — permanently delete a batch.
     pub async fn delete_batch(&self, batch_id: &str) -> Result<serde_json::Value, AnthropicError> {
         let path = format!("/v1/messages/batches/{}", batch_id);
-        self.delete::<serde_json::Value>(&path).await
+        let retry = self.resolve_retry(&RetryPolicy::default());
+        self.delete::<serde_json::Value>(&path, retry).await
     }
 
     /// `GET /v1/messages/batches/{id}/results` — download and parse the
     /// JSON-Lines results file for a completed batch.
     pub async fn get_batch_results(&self, batch_id: &str) -> Result<Vec<BatchResultItem>, AnthropicError> {
         let path = format!("/v1/messages/batches/{}/results", batch_id);
-        let body = self.get_raw(&path).await?;
+        let retry = self.resolve_retry(&RetryPolicy::default());
+        let body = self.get_raw(&path, retry).await?;
         parse_results_jsonl(&body)
+    }
+
+    /// Resolve an in-memory [`RetryPolicy`] to an optional [`ExponentialBackoff`].
+    ///
+    /// Returns `None` when retries should be disabled for this call. Returns
+    /// `Some(backoff)` when retries should run, either with the client-wide
+    /// default or the per-call override.
+    fn resolve_retry(&self, policy: &RetryPolicy) -> Option<ExponentialBackoff> {
+        match policy.kind() {
+            crate::types::RetryPolicyKind::ClientDefault => Some(self.backoff.clone()),
+            crate::types::RetryPolicyKind::Disabled => None,
+            crate::types::RetryPolicyKind::Custom(bo) => Some(bo.clone()),
+        }
     }
 
     fn headers(&self) -> Result<HeaderMap, AnthropicError> {
@@ -282,7 +307,7 @@ impl Client {
         Ok(headers)
     }
 
-    async fn post<I, O>(&self, path: &str, request: &I) -> Result<O, AnthropicError>
+    async fn post<I, O>(&self, path: &str, request: &I, retry: Option<ExponentialBackoff>) -> Result<O, AnthropicError>
     where
         I: Serialize + ?Sized,
         O: DeserializeOwned,
@@ -290,38 +315,43 @@ impl Client {
         let request =
             self.http_client.post(format!("{}{path}", self.api_base)).headers(self.headers()?).json(request).build()?;
 
-        self.execute(request).await
+        self.execute(request, retry).await
     }
 
-    async fn get<O>(&self, path: &str, query: &[(&str, String)]) -> Result<O, AnthropicError>
+    async fn get<O>(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        retry: Option<ExponentialBackoff>,
+    ) -> Result<O, AnthropicError>
     where
         O: DeserializeOwned,
     {
         let request =
             self.http_client.get(format!("{}{path}", self.api_base)).headers(self.headers()?).query(query).build()?;
 
-        self.execute(request).await
+        self.execute(request, retry).await
     }
 
-    async fn get_raw(&self, path: &str) -> Result<String, AnthropicError> {
+    async fn get_raw(&self, path: &str, retry: Option<ExponentialBackoff>) -> Result<String, AnthropicError> {
         let request = self.http_client.get(format!("{}{path}", self.api_base)).headers(self.headers()?).build()?;
-        self.execute_raw(request).await
+        self.execute_raw(request, retry).await
     }
 
-    async fn post_empty<O>(&self, path: &str) -> Result<O, AnthropicError>
+    async fn post_empty<O>(&self, path: &str, retry: Option<ExponentialBackoff>) -> Result<O, AnthropicError>
     where
         O: DeserializeOwned,
     {
         let request = self.http_client.post(format!("{}{path}", self.api_base)).headers(self.headers()?).build()?;
-        self.execute(request).await
+        self.execute(request, retry).await
     }
 
-    async fn delete<O>(&self, path: &str) -> Result<O, AnthropicError>
+    async fn delete<O>(&self, path: &str, retry: Option<ExponentialBackoff>) -> Result<O, AnthropicError>
     where
         O: DeserializeOwned,
     {
         let request = self.http_client.delete(format!("{}{path}", self.api_base)).headers(self.headers()?).build()?;
-        self.execute(request).await
+        self.execute(request, retry).await
     }
 
     async fn post_stream<I>(
@@ -343,60 +373,188 @@ impl Client {
         Ok(stream(event_source).await)
     }
 
-    async fn execute<O>(&self, request: reqwest::Request) -> Result<O, AnthropicError>
+    async fn execute<O>(
+        &self,
+        request: reqwest::Request,
+        retry: Option<ExponentialBackoff>,
+    ) -> Result<O, AnthropicError>
     where
         O: DeserializeOwned,
     {
-        let bytes = self.execute_bytes(request).await?;
+        let bytes = self.execute_bytes(request, retry).await?;
         serde_json::from_slice::<O>(&bytes).map_err(AnthropicError::Deserialize)
     }
 
-    async fn execute_raw(&self, request: reqwest::Request) -> Result<String, AnthropicError> {
-        let bytes = self.execute_bytes(request).await?;
+    async fn execute_raw(
+        &self,
+        request: reqwest::Request,
+        retry: Option<ExponentialBackoff>,
+    ) -> Result<String, AnthropicError> {
+        let bytes = self.execute_bytes(request, retry).await?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
     /// Send a request with retry-on-429, returning the raw success body.
     ///
     /// All response parsing happens in callers; this method only deals with
-    /// transport, retries, and HTTP-level error mapping.
-    async fn execute_bytes(&self, request: reqwest::Request) -> Result<Vec<u8>, AnthropicError> {
-        let client = self.http_client.clone();
+    /// transport, retries, and HTTP-level error mapping. When the `tracing`
+    /// Cargo feature is enabled, each call emits an `anthropic.http` span with
+    /// `method`, `path`, `attempts`, `status`, and `duration_ms` fields, plus
+    /// a per-attempt event carrying the attempt number, response status, and
+    /// attempt duration.
+    async fn execute_bytes(
+        &self,
+        request: reqwest::Request,
+        retry: Option<ExponentialBackoff>,
+    ) -> Result<Vec<u8>, AnthropicError> {
+        // Snapshot the method + path before the request is moved into the
+        // retry closure — they're used by the tracing span as well as any
+        // per-attempt events below.
+        #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+        let method = request.method().clone();
+        #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+        let path = request.url().path().to_string();
 
-        // `reqwest::Request` cannot be cloned when its body is a stream. In
-        // that case we cannot safely retry — fall back to a single attempt.
-        let Some(retryable) = request.try_clone() else {
-            let response = client.execute(request).await?;
-            return process_bytes(response).await;
+        #[cfg(feature = "tracing")]
+        let span = tracing::info_span!(
+            "anthropic.http",
+            method = %method,
+            path = %path,
+            attempts = tracing::field::Empty,
+            status = tracing::field::Empty,
+            duration_ms = tracing::field::Empty,
+        );
+        #[cfg(feature = "tracing")]
+        let _entered = span.enter();
+
+        #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+        let overall_started = Instant::now();
+        let attempt_counter = Arc::new(AtomicU32::new(0));
+
+        let result = match retry {
+            // No retries — fail on the first non-success response.
+            None => execute_once(self.http_client.clone(), request, &attempt_counter).await,
+            Some(backoff) => {
+                // `reqwest::Request` cannot be cloned when its body is a
+                // stream. Fall back to a single attempt in that case — there's
+                // no safe way to retry a consumed body.
+                match request.try_clone() {
+                    None => execute_once(self.http_client.clone(), request, &attempt_counter).await,
+                    Some(retryable) => {
+                        let client = self.http_client.clone();
+                        let attempts = attempt_counter.clone();
+                        backoff::future::retry(backoff, move || {
+                            let client = client.clone();
+                            let attempts = attempts.clone();
+                            let cloned = retryable.try_clone().ok_or_else(|| {
+                                backoff::Error::Permanent(AnthropicError::InvalidRequest(
+                                    "request could not be cloned".into(),
+                                ))
+                            });
+                            async move {
+                                let request = cloned?;
+                                #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+                                let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+                                #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+                                let attempt_started = Instant::now();
+
+                                let response = client
+                                    .execute(request)
+                                    .await
+                                    .map_err(AnthropicError::Http)
+                                    .map_err(backoff::Error::Permanent)?;
+
+                                let status = response.status();
+                                let retry_after =
+                                    parse_retry_after(response.headers().get(reqwest::header::RETRY_AFTER));
+                                let bytes = response
+                                    .bytes()
+                                    .await
+                                    .map_err(AnthropicError::Http)
+                                    .map_err(backoff::Error::Permanent)?;
+
+                                #[cfg(feature = "tracing")]
+                                tracing::debug!(
+                                    target: "anthropic::http",
+                                    attempt,
+                                    status = status.as_u16(),
+                                    duration_ms = attempt_started.elapsed().as_millis() as u64,
+                                    "anthropic.http.attempt"
+                                );
+
+                                if !status.is_success() {
+                                    let error = parse_error(status.as_u16(), bytes.as_ref());
+                                    if status.as_u16() == 429 {
+                                        return Err(backoff::Error::Transient { err: error, retry_after });
+                                    }
+                                    return Err(backoff::Error::Permanent(error));
+                                }
+
+                                Ok(bytes.to_vec())
+                            }
+                        })
+                        .await
+                    }
+                }
+            }
         };
 
-        backoff::future::retry(self.backoff.clone(), || {
-            let request = retryable.try_clone().ok_or_else(|| {
-                backoff::Error::Permanent(AnthropicError::InvalidRequest("request could not be cloned".into()))
-            });
-            let client = client.clone();
-            async move {
-                let request = request?;
-                let response =
-                    client.execute(request).await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
-
-                let status = response.status();
-                let retry_after = parse_retry_after(response.headers().get(reqwest::header::RETRY_AFTER));
-                let bytes = response.bytes().await.map_err(AnthropicError::Http).map_err(backoff::Error::Permanent)?;
-
-                if !status.is_success() {
-                    let error = parse_error(status.as_u16(), bytes.as_ref());
-                    if status.as_u16() == 429 {
-                        return Err(backoff::Error::Transient { err: error, retry_after });
-                    }
-                    return Err(backoff::Error::Permanent(error));
+        #[cfg(feature = "tracing")]
+        {
+            let attempts = attempt_counter.load(Ordering::SeqCst);
+            span.record("attempts", attempts);
+            span.record("duration_ms", overall_started.elapsed().as_millis() as u64);
+            match &result {
+                Ok(_) => {
+                    span.record("status", 200u16);
                 }
-
-                Ok(bytes.to_vec())
+                Err(AnthropicError::Api(api)) => {
+                    tracing::warn!(
+                        target: "anthropic::http",
+                        error_type = %api.error_type,
+                        message = %api.message,
+                        "anthropic api error"
+                    );
+                }
+                Err(AnthropicError::UnexpectedResponse { status, .. }) => {
+                    span.record("status", *status);
+                }
+                Err(_) => {}
             }
-        })
-        .await
+        }
+
+        result
     }
+}
+
+/// Execute a request exactly once (no retries), incrementing the attempt
+/// counter and, when tracing is enabled, emitting a per-attempt event.
+async fn execute_once(
+    client: reqwest::Client,
+    request: reqwest::Request,
+    attempts: &AtomicU32,
+) -> Result<Vec<u8>, AnthropicError> {
+    #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+    let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+    #[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+    let started = Instant::now();
+    let response = client.execute(request).await?;
+    let status = response.status();
+    let bytes = response.bytes().await?;
+
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        target: "anthropic::http",
+        attempt,
+        status = status.as_u16(),
+        duration_ms = started.elapsed().as_millis() as u64,
+        "anthropic.http.attempt"
+    );
+
+    if !status.is_success() {
+        return Err(parse_error(status.as_u16(), bytes.as_ref()));
+    }
+    Ok(bytes.to_vec())
 }
 
 /// Parse a `Retry-After` header value into a [`Duration`].
@@ -415,18 +573,9 @@ fn parse_retry_after(header: Option<&reqwest::header::HeaderValue>) -> Option<Du
     Some(Duration::from_secs(seconds))
 }
 
-async fn process_bytes(response: reqwest::Response) -> Result<Vec<u8>, AnthropicError> {
-    let status = response.status();
-    let bytes = response.bytes().await?;
-    if !status.is_success() {
-        return Err(parse_error(status.as_u16(), bytes.as_ref()));
-    }
-    Ok(bytes.to_vec())
-}
-
 pub type MessagesResponseStream = Pin<Box<dyn Stream<Item = Result<MessagesStreamEvent, AnthropicError>> + Send>>;
 
-fn parse_error(status: u16, bytes: &[u8]) -> AnthropicError {
+pub(crate) fn parse_error(status: u16, bytes: &[u8]) -> AnthropicError {
     if let Ok(error) = serde_json::from_slice::<ErrorResponse>(bytes) {
         return AnthropicError::Api(error.error);
     }

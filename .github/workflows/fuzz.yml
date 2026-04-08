@@ -1,0 +1,56 @@
+name: Fuzz
+
+# Short fuzz smoke test. Builds every `cargo fuzz` target against the
+# latest nightly and runs each for a few seconds. The goal is to catch
+# immediate regressions (e.g. a new parse path that unwraps on empty
+# input), not to replace a long-running campaign.
+#
+# A nightly schedule picks up new upstream advisories even on quiet
+# weeks; a workflow_dispatch trigger lets anyone run the whole thing
+# manually from the Actions tab.
+
+on:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "anthropic/src/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  pull_request:
+    paths:
+      - "anthropic/src/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: cargo fuzz (smoke)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - parse_error
+          - parse_results_jsonl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            fuzz
+      - name: Smoke-run fuzz target
+        working-directory: fuzz
+        # `-max_total_time=30` bounds the smoke run to 30 seconds. Panics
+        # surface as a non-zero exit; no news == good news.
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=30

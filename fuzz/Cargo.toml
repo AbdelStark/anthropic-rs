@@ -1,0 +1,44 @@
+[package]
+name = "anthropic-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# `cargo fuzz` expects the fuzz crate to live outside the primary workspace
+# so that a top-level `cargo test` / `cargo build` does not try to resolve
+# the libfuzzer-sys dependency (which requires nightly). Running fuzz
+# targets is therefore done explicitly via `cargo +nightly fuzz run <name>`
+# from the `fuzz/` directory.
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+# Do not inherit from the top-level workspace — this crate is intentionally
+# excluded so `cargo test` at the repo root never tries to resolve nightly
+# fuzz dependencies.
+
+[dependencies]
+# `libfuzzer-sys` provides the sanitizer-aware fuzz entry point and the
+# `fuzz_target!` macro. Version is pinned conservatively — bumping it is
+# fine, but do so deliberately so a transitive sanitizer change is easy to
+# bisect.
+libfuzzer-sys = "0.4"
+anthropic = { path = "../anthropic", default-features = false, features = ["rustls"] }
+
+# Every target is declared here so `cargo fuzz list` discovers it without
+# any additional configuration. `test = false` and `doc = false` keep the
+# targets out of the regular `cargo test` / `cargo doc` run when the fuzz
+# crate is built directly.
+[[bin]]
+name = "parse_error"
+path = "fuzz_targets/parse_error.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_results_jsonl"
+path = "fuzz_targets/parse_results_jsonl.rs"
+test = false
+doc = false
+bench = false

@@ -326,6 +326,27 @@ let _list = client.list_batches(&ListBatchesParams::new().limit(10)).await?;
 | `StreamAccumulator` / `anthropic::stream::collect` | `Result<MessagesResponse, AnthropicError>` | Folds a live SSE stream into a full response. |
 | `run_tool_loop(&client, request, executor, config)` | `Result<MessagesResponse, AnthropicError>` | Agentic call/execute/reply loop with iteration budget. |
 | `ClientBuilder::backoff(...)` | `ClientBuilder` | Customizes retry behavior for cloneable requests. |
+| `MessagesRequestBuilder::backoff(...)` / `.no_retries()` / `.retry_policy(...)` | `MessagesRequestBuilder` | Per-call retry override — opt out of retries on interactive paths or stretch them for background workers without rebuilding the client. Also available on `CountTokensRequestBuilder` and `CreateBatchRequest`. |
+
+### Cargo features
+
+| Feature | Default | What it does |
+| --- | --- | --- |
+| `rustls` | ✅ | TLS via `rustls` + native root certs (pulled from `reqwest`). |
+| `native-tls` | | Swap to the system-native TLS stack. |
+| `tracing` | | Emit structured `tracing` spans around every HTTP call on the transport critical path (`anthropic.http`), carrying `method`, `path`, `status`, `attempts`, and `duration_ms` fields, plus per-attempt debug events. Compiled out entirely when the feature is off. |
+
+Enable tracing in your `Cargo.toml`:
+
+```toml
+[dependencies]
+anthropic = { version = "0.1", features = ["tracing"] }
+tracing-subscriber = "0.3"
+```
+
+Then install any `tracing` subscriber at startup (for example
+`tracing_subscriber::fmt::init()`), and every `/v1/*` call will show up
+as an `anthropic.http` span with the fields listed above.
 
 ## Deployment / Integration
 

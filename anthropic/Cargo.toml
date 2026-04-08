@@ -2,6 +2,7 @@
 name = "anthropic"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
 license = "MIT"
 homepage = "https://github.com/AbdelStark/anthropic-rs"
 repository = "https://github.com/AbdelStark/anthropic-rs"
@@ -16,6 +17,11 @@ default = ["rustls"]
 rustls = ["reqwest/rustls-tls-native-roots"]
 # Enable native-tls for TLS support
 native-tls = ["reqwest/native-tls"]
+# Emit structured `tracing` spans around every HTTP call on the transport
+# critical path. The spans carry `method`, `path`, `status`, `attempt`, and
+# `duration_ms` fields. When disabled, the `tracing` dependency is not built
+# and every instrumentation point compiles to a no-op.
+tracing = ["dep:tracing"]
 
 [dependencies]
 backoff = { version = "0.4", features = ["tokio"], default-features = false }
@@ -27,7 +33,14 @@ serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tokio-stream = "0.1"
+tracing = { version = "0.1", default-features = false, features = ["std", "attributes"], optional = true }
 
 [dev-dependencies]
 dotenvy = "0.15"
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
 wiremock = "0.6"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

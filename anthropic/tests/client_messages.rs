@@ -180,6 +180,73 @@ async fn messages_retries_429_then_succeeds() {
 }
 
 #[tokio::test]
+async fn messages_no_retries_fails_on_first_429() {
+    let server = MockServer::start().await;
+
+    // With `.no_retries()` the client must give up after the first 429 —
+    // exposing that to the mock server as exactly one request hitting the
+    // rate-limit endpoint.
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+            "type": "error",
+            "error": {"type": "rate_limit_error", "message": "slow down"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = build_client(&server);
+    let request = MessagesRequestBuilder::new("claude", vec![Message::user("hi")], 10).no_retries().build().unwrap();
+    let err = client.messages(request).await.unwrap_err();
+    match err {
+        AnthropicError::Api(api) => {
+            assert_eq!(api.error_type, "rate_limit_error");
+        }
+        other => panic!("expected Api(rate_limit_error), got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn messages_custom_backoff_bounds_retries() {
+    use anthropic::ExponentialBackoff;
+    use std::time::Duration;
+
+    let server = MockServer::start().await;
+
+    // A tight backoff (`max_elapsed_time = 50ms`, `initial_interval = 10ms`)
+    // lets this test assert that a per-request override short-circuits the
+    // client-wide default (15 minutes). Exactly two 429s — one for the
+    // initial attempt, one retry — are enough to exceed 50ms and stop.
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0").set_body_json(json!({
+            "type": "error",
+            "error": {"type": "rate_limit_error", "message": "slow down"}
+        })))
+        .mount(&server)
+        .await;
+
+    let backoff = ExponentialBackoff {
+        initial_interval: Duration::from_millis(10),
+        max_interval: Duration::from_millis(10),
+        max_elapsed_time: Some(Duration::from_millis(50)),
+        multiplier: 1.0,
+        randomization_factor: 0.0,
+        ..ExponentialBackoff::default()
+    };
+
+    let client = build_client(&server);
+    let request =
+        MessagesRequestBuilder::new("claude", vec![Message::user("hi")], 10).backoff(backoff).build().unwrap();
+    let start = std::time::Instant::now();
+    let err = client.messages(request).await.unwrap_err();
+    let elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_secs(2), "custom backoff did not bound retries (elapsed: {elapsed:?})");
+    assert!(matches!(err, AnthropicError::Api(_)));
+}
+
+#[tokio::test]
 async fn messages_preserves_conversation_roundtrip() {
     let server = MockServer::start().await;
 

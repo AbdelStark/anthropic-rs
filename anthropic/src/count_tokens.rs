@@ -3,10 +3,11 @@
 //! Lets callers pre-compute the input-token cost of a Messages request without
 //! actually generating a response.
 
+use backoff::ExponentialBackoff;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AnthropicError;
-use crate::types::{Message, MessagesRequest, SystemPrompt, ThinkingConfig, Tool, ToolChoice};
+use crate::types::{Message, MessagesRequest, RetryPolicy, SystemPrompt, ThinkingConfig, Tool, ToolChoice};
 
 /// Request payload for `POST /v1/messages/count_tokens`.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -21,13 +22,17 @@ pub struct CountTokensRequest {
     pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
+    /// Per-request retry policy. Carried in memory only; never serialized.
+    #[serde(skip, default)]
+    pub retry_policy: RetryPolicy,
 }
 
 impl CountTokensRequest {
     /// Build a count-tokens request from an existing [`MessagesRequest`].
     ///
     /// Fields that don't affect token counting (max_tokens, temperature, etc.)
-    /// are dropped.
+    /// are dropped. The source request's retry policy is propagated so the
+    /// count-tokens call inherits the same retry behavior.
     pub fn from_messages_request(request: &MessagesRequest) -> Self {
         Self {
             model: request.model.clone(),
@@ -36,6 +41,7 @@ impl CountTokensRequest {
             tools: request.tools.clone(),
             tool_choice: request.tool_choice.clone(),
             thinking: request.thinking.clone(),
+            retry_policy: request.retry_policy.clone(),
         }
     }
 }
@@ -49,6 +55,7 @@ pub struct CountTokensRequestBuilder {
     tools: Option<Vec<Tool>>,
     tool_choice: Option<ToolChoice>,
     thinking: Option<ThinkingConfig>,
+    retry_policy: RetryPolicy,
 }
 
 impl CountTokensRequestBuilder {
@@ -76,6 +83,24 @@ impl CountTokensRequestBuilder {
         self
     }
 
+    /// Override the retry policy for this request. See [`RetryPolicy`].
+    pub fn retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
+    }
+
+    /// Send this request with a caller-supplied [`ExponentialBackoff`].
+    pub fn backoff(mut self, backoff: ExponentialBackoff) -> Self {
+        self.retry_policy = RetryPolicy::custom(backoff);
+        self
+    }
+
+    /// Disable retries for this request.
+    pub fn no_retries(mut self) -> Self {
+        self.retry_policy = RetryPolicy::none();
+        self
+    }
+
     pub fn build(self) -> Result<CountTokensRequest, AnthropicError> {
         let model = self.model.ok_or_else(|| AnthropicError::InvalidRequest("model is required".into()))?;
         if model.is_empty() {
@@ -92,6 +117,7 @@ impl CountTokensRequestBuilder {
             tools: self.tools,
             tool_choice: self.tool_choice,
             thinking: self.thinking,
+            retry_policy: self.retry_policy,
         })
     }
 }

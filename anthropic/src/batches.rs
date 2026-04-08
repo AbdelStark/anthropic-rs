@@ -4,10 +4,11 @@
 //! operation and poll for results asynchronously. Each request in the batch is
 //! identified by a `custom_id` that the caller chooses.
 
+use backoff::ExponentialBackoff;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AnthropicError;
-use crate::types::{MessagesRequest, MessagesResponse};
+use crate::types::{MessagesRequest, MessagesResponse, RetryPolicy};
 
 /// Individual request entry submitted as part of a batch.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -26,11 +27,14 @@ impl BatchRequest {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct CreateBatchRequest {
     pub requests: Vec<BatchRequest>,
+    /// Per-request retry policy. Carried in memory only; never serialized.
+    #[serde(skip, default)]
+    pub retry_policy: RetryPolicy,
 }
 
 impl CreateBatchRequest {
     pub fn new(requests: Vec<BatchRequest>) -> Self {
-        Self { requests }
+        Self { requests, retry_policy: RetryPolicy::default() }
     }
 
     /// Validate that a batch has at least one request before sending.
@@ -39,6 +43,24 @@ impl CreateBatchRequest {
             return Err(AnthropicError::InvalidRequest("batch must contain at least one request".into()));
         }
         Ok(())
+    }
+
+    /// Override the retry policy for this batch submission. See [`RetryPolicy`].
+    pub fn retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
+    }
+
+    /// Use a caller-supplied [`ExponentialBackoff`] for this submission.
+    pub fn backoff(mut self, backoff: ExponentialBackoff) -> Self {
+        self.retry_policy = RetryPolicy::custom(backoff);
+        self
+    }
+
+    /// Disable retries for this batch submission.
+    pub fn no_retries(mut self) -> Self {
+        self.retry_policy = RetryPolicy::none();
+        self
     }
 }
 
