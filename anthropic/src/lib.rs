@@ -30,6 +30,7 @@ pub mod client;
 pub mod count_tokens;
 pub mod error;
 pub mod models;
+pub mod stream;
 pub mod types;
 
 pub use batches::{
@@ -40,3 +41,4 @@ pub use client::{Client, ClientBuilder};
 pub use count_tokens::{CountTokensRequest, CountTokensRequestBuilder, CountTokensResponse};
 pub use error::{AnthropicError, ApiError};
 pub use models::{ListModelsParams, Model, ModelList};
+pub use stream::{collect, collect_stream, StreamAccumulator};
